@@ -1,0 +1,116 @@
+---
+title: "MUSA508_midterm"
+author: "Jasmine Wu"
+date: "10/8/2021"
+output: 
+  html_document: 
+    toc: true
+    toc_float: true
+    code_folding: hide
+---
+<br />
+
+```{r knitr.setup, include=TRUE, cache = FALSE, message = FALSE}
+knitr::opts_chunk$set(echo = TRUE,fig.width = 10, fig.height = 5)
+knitr::opts_chunk$set(echo = TRUE,fig.width = 10, fig.height = 5)
+knitr::write_bib("knitr", file = "packages.bib")
+```
+<br />
+
+
+**Loading Libraries**
+```{r setup, include=TRUE, cache = FALSE, message = FALSE}
+library(tidyverse)
+library(sf)
+library(spdep)
+library(caret)
+library(ckanr)
+library(FNN)
+library(grid)
+library(gridExtra)
+library(ggcorrplot)
+library(kableExtra)
+library(jtools)     # for regression model plots
+library(ggstance)
+
+options(scipen=999) 
+options(tigris_class = "sf")
+options(tigris_use_cache = TRUE)
+
+#source("https://github.com/zoenyoo/MUSA_Midterm/MUSA508_midterm_Wu.rproj")
+
+root.dir = "https://github.com/zoenyoo/MUSA_Midterm/tree/main/Modeling_Data"
+```
+
+**Loading Styling Options**
+```{r load_styling, include=TRUE, cache = FALSE, message = FALSE, warning = FALSE}
+mapTheme <- function(base_size = 12) {
+  theme(
+    text = element_text( color = "black"),
+    plot.title = element_text(size = 16,colour = "black"),
+    plot.subtitle=element_text(face="italic"),
+    plot.caption=element_text(hjust=0),
+    axis.ticks = element_blank(),
+    panel.background = element_blank(),axis.title = element_blank(),
+    axis.text = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(colour = "black", fill=NA, size=2),
+    strip.text.x = element_text(size = 14))
+}
+
+plotTheme <- function(base_size = 12) {
+  theme(
+    text = element_text( color = "black"),
+    plot.title = element_text(size = 16,colour = "black"),
+    plot.subtitle = element_text(face="italic"),
+    plot.caption = element_text(hjust=0),
+    axis.ticks = element_blank(),
+    panel.background = element_blank(),
+    panel.grid.major = element_line("grey80", size = 0.1),
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(colour = "black", fill=NA, size=2),
+    strip.background = element_rect(fill = "grey80", color = "white"),
+    strip.text = element_text(size=12),
+    axis.title = element_text(size=12),
+    axis.text = element_text(size=10),
+    plot.background = element_blank(),
+    legend.background = element_blank(),
+    legend.title = element_text(colour = "black", face = "italic"),
+    legend.text = element_text(colour = "black", face = "italic"),
+    strip.text.x = element_text(size = 14)
+  )
+}
+```
+
+**Loading Quantile Break Functions**
+```{r qBr, include=TRUE, cache = FALSE, message = FALSE, warning = FALSE}
+qBr <- function(df, variable, rnd) {
+ if (missing(rnd)) {
+    as.character(quantile(round(df[[variable]],0),
+                 c(.01,.2,.4,.6,.8), na.rm=T))
+ } else if (rnd == FALSE | rnd == F) {
+    as.character(formatC(quantile(df[[variable]],
+                 c(.01,.2,.4,.6,.8), na.rm=T), digits = 3))
+ }
+}
+
+
+q5 <- function(variable) {as.factor(ntile(variable, 5))}
+```
+
+**Loading Hexadecimal Color Palette**
+```{r palette5, include=TRUE, cache = FALSE, message = FALSE, warning = FALSE}
+palette5 <- c("#eff3ff", "#bdd7e7", "#6baed6", "#3182bd", "#08519c")
+```
+
+<br />
+
+
+## 2. Data Wrangling
+```{r read_data, cache = TRUE, message = FALSE, warning = FALSE}
+
+
+
+```
