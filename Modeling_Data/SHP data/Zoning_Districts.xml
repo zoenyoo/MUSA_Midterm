@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?><metadata>
+    <idinfo>
+        <citation>
+            <citeinfo>
+                <origin/>
+                <pubdate>20201027</pubdate>
+                <title>Zoning Districts</title>
+                <onlink>https://maps.bouldercolorado.gov/arcgis/rest/services/plan/ZoningDistricts/MapServer/0</onlink>
+            </citeinfo>
+        </citation>
+        <descript>
+            <abstract>City of Boulder Colorado Zoning Districts. Including residential, business, industrial, public, agricultural, mix of residential and business, residential mobile homes, main street area and mixed density residential.</abstract>
+            <purpose>City zoning designations. Including residential, business, industrial, public, agricultural, mix of residential and business, residential mobile homes, main street area and mixed density residential.</purpose>
+        </descript>
+        <status>
+            <progress>In work</progress>
+            <update>As needed</update>
+        </status>
+        <spdom>
+            <bounding>
+                <westbc>-105.30145090928737</westbc>
+                <eastbc>-105.1780988152504</eastbc>
+                <northbc>40.0944857605384</northbc>
+                <southbc>39.95691592175225</southbc>
+            </bounding>
+        </spdom>
+        <keywords>
+            <theme>
+                <themekt>None</themekt>
+                <themekey>administrative-boundaries</themekey>
+                <themekey>boulder</themekey>
+                <themekey>colorado</themekey>
+                <themekey>gis</themekey>
+                <themekey>planning-and-zoning</themekey>
+                <themekey>zoning</themekey>
+            </theme>
+        </keywords>
+        <accconst>Other Constraints</accconst>
+        <useconst>Creative Commons CC Zero license (CC0 1.0)</useconst>
+        <datacred>Information Resouces</datacred>
+    </idinfo>
+    <metainfo>
+        <metd>20201027</metd>
+        <metc>
+            <cntinfo>
+                <cntorgp>
+                    <cntorg>City of Boulder</cntorg>
+                </cntorgp>
+                <cntaddr>
+                    <addrtype>unknown</addrtype>
+                    <city>Boulder</city>
+                </cntaddr>
+            </cntinfo>
+        </metc>
+        <metstdn>FGDC Content Standard for Digital Geospatial Metadata</metstdn>
+        <metstdv>FGDC-STD-001-1998</metstdv>
+        <mettc>local time</mettc>
+    </metainfo>
+</metadata>
