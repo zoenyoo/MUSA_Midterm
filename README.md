@@ -1,5 +1,5 @@
 # MUSA_Midterm
-I edited the 3335 Talisman Ct to only be $315,000 as it was $315,000,000 on the original data sheet but I believe that was an error, see: https://www.zillow.com/homedetails/3335-Talisman-Ct-APT-C-Boulder-CO-80301/13222117_zpid/
+I edited 3335 Talisman Ct to only be $315,000 as it was $315,000,000 on the original data sheet but I believe that was an error, see: https://www.zillow.com/homedetails/3335-Talisman-Ct-APT-C-Boulder-CO-80301/13222117_zpid/
 
 
 https://spatialreference.org/ref/esri/102253/
