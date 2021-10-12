@@ -25,12 +25,14 @@ library(ggcorrplot)
 library(kableExtra)
 library(jtools)     # for regression model plots
 library(ggstance) # to support jtools plots
+library(osmdata)
 
 library(knitr)
 library(tidycensus)
 library(scales)
 
 # functions
+root.dir = "C:/Users/zoeny/OneDrive - PennO365/GrSchool/Year1/MUSA 508 Public Policy Analytics/MUSA508/MUSA_Midterm"
 source("https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/functions.r")
 
 palette5 <- c("#25CB10", "#5AB60C", "#8FA108",   "#C48C04", "#FA7800")
@@ -38,23 +40,85 @@ palette5 <- c("#25CB10", "#5AB60C", "#8FA108",   "#C48C04", "#FA7800")
 ```
 
 ```{r read_data}
+boulder.sf <- 
+  st_read(file.path(root.dir,"/studentData.geojson"), ) %>% 
+  st_as_sf(coords = c("Longitude", "Latitude"), crs = 'ESRI:102254', agr = "constant") %>%
+  st_transform('ESRI:102254')
 
-nhoods <- 
-  st_read("http://bostonopendata-boston.opendata.arcgis.com/datasets/3525b0ee6e6b427f9aab5d0a1d0a1a28_0.geojson") %>%
-  st_transform('ESRI:102286')
+boulder.sf <- mutate(boulder.sf, Age = 2021 - builtYear) 
 
-boston <- 
-  read.csv(file.path(root.dir,"/Chapter3_4/bostonHousePriceData_clean.csv"))
+#parcels.sf <- 
+#  st_read("https://opendata.arcgis.com/datasets/89ae49d4ddf246388ee5f5e952aa84db_0.geojson") %>% 
+#  st_transform(st_crs(boulder.sf))
+boulder.boundary <- 
+  st_read("https://opendata.arcgis.com/datasets/964b8f3b3dbe401bb28d49ac93d29dc4_0.geojson") %>%
+  st_transform(st_crs(boulder.sf))
 
-boston.sf <- 
-  boston %>% 
-  st_as_sf(coords = c("Longitude", "Latitude"), crs = 4326, agr = "constant") %>%
-  st_transform('ESRI:102286')
+```
 
-boston.sf <- st_read(file.path(root.dir,"/Chapter3_4/boston_sf_Ch1_wrangled.geojson")) %>% 
-  st_set_crs('ESRI:102286')
+```{r}
+
+ggplot() +
+  geom_sf(data = boulder.boundary, fill = "grey40") +
+  geom_sf(data = boulder.sf, aes(colour = q5(price)), 
+          show.legend = "point", size = 2) +
+  scale_colour_manual(values = palette5,
+                      labels=qBr(Boulder, CO,"price"),
+                      name="Quintile\nBreaks") +
+  labs(title="Sale price, Boulder") +
+  mapTheme()
+
+q <- getbb("Boulder County") %>%
+      opq() %>%
+      add_osm_feature("feature", "highway")
+highway <- osmdata_sf(q)
+
+#final map
+ggplot(data=highway$osm_lines)
+```
+
+```{r preprocessing}
+
+st_drop_geometry(boulder.sf) %>% 
+  mutate(Age = 2021 - builtYear) %>%
+  dplyr::select(price, TotalFinishedSF, Age) %>%
+  filter(price <= 10000000, Age < 500) %>%
+  gather(Variable, Value, -price) %>% 
+   ggplot(aes(Value, price)) +
+     geom_point(size = .5) + geom_smooth(method = "lm", se=F, colour = "#FA7800") +
+     facet_wrap(~Variable, ncol = 3, scales = "free") +
+     labs(title = "Price as a function of continuous variables") +
+     plotTheme()
+
+```
+
+```{r correlation_matrix, fig.width=12}
+numericVars <- 
+  select_if(st_drop_geometry(boulder.sf), is.numeric) %>% 
+  na.omit()
+
+ggcorrplot(
+  round(cor(numericVars), 1), 
+  p.mat = cor_pmat(numericVars),
+  colors = c("#25CB10", "white", "#FA7800"),
+  type="lower",
+  insig = "blank") +  
+    labs(title = "Correlation across numeric variables") 
+
+```
 
 
-bostonCrimes <- read.csv(file.path(root.dir,"/Chapter3_4/bostonCrimes.csv"))
+```{r mutlivariate_regression}
+reg1 <- lm(price ~ ., data = st_drop_geometry(boulder.sf) %>% 
+                                 dplyr::select(price, Age, TotalFinishedSF, designCodeDscr, 
+                                               carStorageType, nbrBedRoom, bsmtType,
+                                               qualityCode, nbrRoomsNobath, nbrFullBaths, 
+                                               mainfloorSF, ExtWallDscrPrim, AcDscr, HeatingDscr))
+
+summary(reg1)
+```
+
+```{r}
+
 
 ```
