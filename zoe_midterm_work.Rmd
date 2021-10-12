@@ -113,9 +113,10 @@ reg1 <- lm(price ~ ., data = st_drop_geometry(boulder.sf) %>%
                                  dplyr::select(price, Age, TotalFinishedSF, designCodeDscr, 
                                                carStorageType, nbrBedRoom, bsmtType,
                                                qualityCode, nbrRoomsNobath, nbrFullBaths, 
-                                               mainfloorSF, ExtWallDscrPrim, AcDscr, HeatingDscr))
+                                               mainfloorSF, AcDscr))
 
 summary(reg1)
+plot_summs(reg1)
 ```
 
 ```{r}
