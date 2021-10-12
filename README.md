@@ -9,6 +9,7 @@ Variables to consider:
 -	Proximity to trails/trailheads
 -	Floodplains: https://opendata-bouldercounty.hub.arcgis.com/datasets/bouldercounty::floodplain-fema-regulated/about
 	  -	High Hazard Zones?(polygons): https://opendata.arcgis.com/datasets/bfc343d63cf54831810b983b36ce6872_1.geojson
+
 OSM Data to consider(https://cran.r-project.org/web/packages/osmdata/vignettes/osmdata.html):
 - Proximity to schools?
 - Proximity to lakes/water?
