@@ -134,8 +134,7 @@ ggcorrplot(  #correlation plot
 reg1 <- lm(price ~ ., data = st_drop_geometry(boulder.sf) %>% 
              dplyr::select(price, Age, TotalFinishedSF, designCodeDscr, 
                            bsmtType, qualityCodeDscr, nbrRoomsNobath, nbrFullBaths, 
-                           mainfloorSF, AcDscr, playground.Buffer, NAME.y,
-                           parks.Buffer))
+                           mainfloorSF, AcDscr, playground.Buffer, parks.Buffer))
 
 summary(reg1)
 plot_summs(reg1)
@@ -150,8 +149,8 @@ boulder.test <- boulder.sf[-inTrain,]
 reg.training <- 
   lm(price ~ ., data = as.data.frame(boulder.training) %>% 
        dplyr::select(price, Age, TotalFinishedSF, designCodeDscr, 
-                     bsmtType, qualityCode, nbrRoomsNobath, nbrFullBaths, 
-                     mainfloorSF, AcDscr, playground.Buffer))
+                     bsmtType, qualityCodeDscr, nbrRoomsNobath, nbrFullBaths, 
+                     mainfloorSF, AcDscr, playground.Buffer, parks.Buffer))
 
 boulder.test <-
   boulder.test %>%
