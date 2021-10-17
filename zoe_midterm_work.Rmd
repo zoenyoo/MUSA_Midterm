@@ -5,6 +5,13 @@ date: "10/8/2021"
 output: html_document
 ---
 
+
+
+
+
+Much of our data was gathered through 
+
+
 ```{r setup, include=FALSE}
 
 # You can set some global options for knitting chunks
