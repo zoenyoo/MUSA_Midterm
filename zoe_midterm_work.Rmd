@@ -17,6 +17,7 @@ Much of our data was gathered through
 # You can set some global options for knitting chunks
 
 knitr::opts_chunk$set(echo = TRUE)
+census_api_key("0e2fd0485a8e62ac3a5ebf1ad8bebb2cb181de6b",overwrite = TRUE, install = TRUE)
 
 # Load some libraries
 
