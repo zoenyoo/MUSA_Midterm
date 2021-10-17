@@ -1,7 +1,7 @@
 ---
 title: "MUSA508_midterm"
-author: "Jasmine Wu"
-date: "10/8/2021"
+author: "Jasmine Siyu Wu"
+date: "10/18/2021"
 output: 
   html_document: 
     toc: true
@@ -12,11 +12,18 @@ output:
 
 ```{r knitr.setup, include=TRUE, cache = FALSE, message = FALSE}
 knitr::opts_chunk$set(echo = TRUE,fig.width = 10, fig.height = 5)
-knitr::opts_chunk$set(echo = TRUE,fig.width = 10, fig.height = 5)
-knitr::write_bib("knitr", file = "packages.bib")
 ```
 <br />
 
+## 1. Introduction
+[placeholder of paragraphs]
+
+<br />
+<br />
+
+
+## 2. Setting Up Environment and Styling
+This section sets up the environment including libraries, styling options, quintile break functions, and color palettes.
 
 **Loading Libraries**
 ```{r setup, include=TRUE, cache = FALSE, message = FALSE}
@@ -32,14 +39,19 @@ library(ggcorrplot)
 library(kableExtra)
 library(jtools)     # for regression model plots
 library(ggstance)
+library(osmdata)
+library(knitr)
+library(tidycensus)
+library(scales)
+
 
 options(scipen=999) 
 options(tigris_class = "sf")
 options(tigris_use_cache = TRUE)
 
-#source("https://github.com/zoenyoo/MUSA_Midterm/MUSA508_midterm_Wu.rproj")
-
-root.dir = "https://github.com/zoenyoo/MUSA_Midterm/tree/main/Modeling_Data"
+# functions and data directory
+root.dir = "https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/DATA/"
+source("https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/functions.r")
 ```
 
 **Loading Styling Options**
@@ -106,11 +118,482 @@ palette5 <- c("#eff3ff", "#bdd7e7", "#6baed6", "#3182bd", "#08519c")
 ```
 
 <br />
+<br />
 
+## 3. Data Wrangling
+[placeholder of paragraphs]
 
-## 2. Data Wrangling
+<br />
+
+### 3.1. Loading Data
+
+loading features
 ```{r read_data, cache = TRUE, message = FALSE, warning = FALSE}
+# read in boulder training data
+boulder.sf <- 
+  st_read("studentData.geojson", crs="ESRI:102254") %>%
+  st_transform('ESRI:102254') %>%  # "NAD_1983_HARN_StatePlane_Colorado_North_FIPS_0501"
+  st_make_valid() %>% 
+  mutate(Age = 2021 - builtYear,
+         PricePerSF = price/TotalFinishedSF)
+
+boulder.sf <- transform(boulder.sf, qualityCode = as.character(qualityCode), 
+                        bldgClass = as.character(bldgClass),
+                        ConstCode = as.character(ConstCode),
+                        Ac = as.character(Ac),
+                        Heating = as.character(Heating),
+                        ExtWallPrim = as.character(ExtWallPrim),
+                        ExtWallSec = as.character(ExtWallSec),
+                        IntWall = as.character(IntWall),
+                        Roof_Cover = as.character(Roof_Cover))
+
+
+boulder.sf[2638,]$price <- 315000 #mistake input as 31500000, checked on zillow
+
+
+
+# read in commissioner districts
+# data source: boulder county open data portal
+coms_dists.sf <-
+  st_read("https://opendata.arcgis.com/datasets/1fb6698cad044e3fb0471d1d464049ad_0.geojson") %>%
+  st_transform(st_crs(boulder.sf))
+
+
+# read in boulder county playgrounds (point)
+# data source: boulder county open data portal
+playgrounds.sf <- 
+  st_read("https://opendata.arcgis.com/datasets/b89ea27bc3cd492682503f03df1a9fb9_0.geojson") %>%
+  st_as_sf(coords=playgrounds.sf$geometry, crs = 4326) %>% 
+  st_transform(st_crs(boulder.sf)) 
+
+
+# read in schools in boulder county from open street map
+# data source: open street map
+schools <- osmdata_sf(getbb("Boulder County", base_url="https://nominatim.openstreetmap.org") %>% 
+                             opq() %>% 
+                             add_osm_feature("amenity", "school"))$osm_points
+
+schools.sf <- st_as_sf(schools, coords=schools$geometry, crs = 4326) %>% 
+  st_geometry(schools.sf$geometry) %>%
+  st_transform(st_crs(boulder.sf))  %>%
+  st_sf() %>%
+  cbind(., schools$name) %>%
+  rename(NAME = schools.name)
+
+
+# read in parks from open street map
+# data source: open street map
+parks <- osmdata_sf(getbb("Boulder County", base_url="https://nominatim.openstreetmap.org") %>% opq() %>%
+                      add_osm_feature(key = 'leisure', value = "park"))
+
+parks.sf <- st_geometry(parks$osm_polygons) %>%
+  st_transform(st_crs(boulder.sf)) %>%
+  st_sf() %>%
+  cbind(., parks$osm_polygons$name) %>%
+  rename(NAME = parks.osm_polygons.name)
+
+
+# read in pollution score
+
+
+
+
+# read in transit stops
+# data source: open street map
+bus_stops <- osmdata_sf(getbb("Boulder County", base_url="https://nominatim.openstreetmap.org") %>% 
+                             opq() %>% 
+                             add_osm_feature("highway", "bus_stop"))$osm_points
+
+bus_stops.sf <- st_as_sf(bus_stops, coords=bus_stops$geometry, crs = 4326) %>% 
+  st_geometry(bus_stops.sf$geometry) %>%
+  st_transform(st_crs(boulder.sf)) %>%
+  st_sf() %>%
+  cbind(., bus_stops$name) %>%
+  rename(NAME = bus_stops.name)
+
+
+# read in highway ramps
+
+
+
+# read in grass land from open street map
+# data source: open street map
+grass <- osmdata_sf(getbb("Boulder County", base_url="https://nominatim.openstreetmap.org") %>% opq() %>%
+                      add_osm_feature(key = 'landuse', value = "grass"))
+
+grass.sf <- st_geometry(grass$osm_polygons) %>%
+  st_transform(st_crs(boulder.sf)) %>%
+  st_sf() %>%
+  cbind(., grass$osm_polygons$name) %>%
+  rename(NAME = grass.osm_polygons.name)
+
+
+
+# read in lakes and reservoirs data
+# data source: boulder county open data portal
+lakes.sf <-
+  st_read("https://opendata.arcgis.com/datasets/e0759cd6dc8f4990a04b77a29c988b55_0.geojson") %>%
+  st_transform(st_crs(boulder.sf))
+
+
+# read in trail routes
+# data source: boulder county open data portal
+trails.sf <-
+  st_read("https://opendata.arcgis.com/datasets/3ed1045255c34eada007840a5dd84de9_0.geojson") %>%
+  st_transform(st_crs(boulder.sf))
+
+
+# read in trailheads
+# data source: boulder county open data portal
+trailheads.sf <-
+  st_read("https://opendata.arcgis.com/datasets/3a950053bbef46c6a3c2abe3aceee3de_0.geojson") %>%
+  st_transform(st_crs(boulder.sf))
+
+
+# read in parcels
+# data source: boulder county open data portal
+parcels.sf <-
+  st_read("https://opendata.arcgis.com/datasets/89ae49d4ddf246388ee5f5e952aa84db_0.geojson") %>%
+  st_transform(st_crs(boulder.sf))
+
+
+# read in mobile homes
+# data source: boulder county open data portal
+trailheads.sf <-
+  st_read("https://opendata.arcgis.com/datasets/8d53540bcc264bc3b13a500ab274bfa6_0.geojson") %>%
+  st_transform(st_crs(boulder.sf))
+
+```
+<br />
+
+Loading boundaries and demographic data
+
+```{r read_acs_data, cache = TRUE, message = FALSE, warning = FALSE}
+acs_variable_list.2019 <- load_variables(2019, #year
+                                         "acs5", #five year ACS estimates
+                                         cache = TRUE)
+
+
+
+# read in boulder county boundary
+# data source: boulder county open data portal
+county_boundary <-
+  st_read("https://opendata.arcgis.com/datasets/964b8f3b3dbe401bb28d49ac93d29dc4_0.geojson") %>%
+  st_transform(st_crs(boulder.sf))
+
+# read in places (cities)
+# data source: ACS 2015-19 5yr
+places <- get_acs(geography = "place", 
+                    year = 2019,
+                    state = 08,
+                    variables = (TotalPop = 'B01001_001E'),
+                    survey = "acs5",
+                    output = "wide",
+                    geometry = TRUE) %>%
+  st_transform(st_crs(boulder.sf))
+
+# filter out cities in boulder county
+bc.places <-  
+  st_centroid(places)[county_boundary,] %>%
+  st_drop_geometry() %>%
+  left_join(places) %>%
+  st_sf() 
+
+# read in ACS 5yr 2015-19 estimates
+# variables: population density, poverty rate, median household income, white population percent, 
+tractsBC19 <- 
+  get_acs(geography = "tract", variables = c("B01001_001","B02001_002","B15001_050",
+                                             "B15001_009","B19013_001","B25058_001",
+                                             "B06012_002"), 
+          year=2019, state=08, county=013, geometry=T,output="wide") %>%
+  st_transform(st_crs(boulder.sf)) %>%
+  rename(TotalPop = B01001_001E, 
+         Whites = B02001_002E,
+         FemaleBachelors = B15001_050E, 
+         MaleBachelors = B15001_009E,
+         MedHHInc = B19013_001E, 
+         MedRent = B25058_001E,
+         TotalPoverty = B06012_002E) %>%
+  dplyr::select(-NAME, -starts_with("B")) %>%
+  mutate(pctWhite = ifelse(TotalPop > 0, Whites / TotalPop,0), # avoid of NAs
+         pctBachelors = ifelse(TotalPop > 0, ((FemaleBachelors + MaleBachelors) / TotalPop),0),
+         pctPoverty = ifelse(TotalPop > 0, TotalPoverty / TotalPop, 0), 
+         areaSqMi = as.numeric(st_area(.))*0.00000038610215855, 
+         popDensity = TotalPop/areaSqMi,
+         year = "2019") %>%
+  dplyr::select(-Whites, -FemaleBachelors, -MaleBachelors, -TotalPoverty) 
+
+
+
+# visualize raw data
+ggplot() +
+    geom_sf(data=county_boundary, show.legend = NA, color='grey',alpha=0.5, lwd=0.3)+
+    geom_sf(data=bc.places, show.legend = NA, color='grey', lwd=0.1)+
+    geom_sf(data = boulder.sf, aes(colour = q5(price)), 
+            show.legend = "point", size = 1) + 
+    scale_fill_manual(values = palette5,
+                      labels = qBr(boulder.sf, "price"),
+                      name = "House Price\n(Quintile Breaks)")
+    #geom_sf(data=playgrounds.sf, color="black", alpha=0.7, shape=18, size=1)+
+    #geom_sf(data=schools, color="black", shape=15, alpha=0.7, size=1) 
+    #+    coord_sf(datum=st_crs(boulder.sf))
+
+```
+
+<br />
+
+### 3.2. Feature Engineering
+
+```{r feature_engineering, cache = TRUE, message = FALSE, warning = FALSE}
+# number of bus tops within 0.5 mile and within 0.25 mile
+
+boulder.sf <-
+  st_intersection(x = st_buffer(boulder.sf, 1609*0.5), y = bus_stops.sf) %>%
+  group_by(MUSA_ID) %>%
+  summarise(BusStop_hfMi = count(.))
+  
+
+boulder.sf$BusStop_qtrMi =
+    st_buffer(boulder.sf, 1609*0.25) %>% # meter to mile
+    aggregate(mutate(bus_stops.sf, counter = 1),., sum) %>%
+    pull(counter)
+
+
+
+# average nearest neighbor distance to 1-NN and 3-NN parks
+st_c <- st_coordinates #st_c(coordinates)
+
+boulder.sf <-
+  boulder.sf %>% 
+    mutate(park_nn1 = nn_function(st_c(boulder.sf), st_c(st_centroid(parks.sf)), 1)/1609,
+           park_nn3 = nn_function(st_c(boulder.sf), st_c(st_centroid(parks.sf)), 3)/1609) #in mile
+
+mean(boulder.sf$park_nn1)
+mean(boulder.sf$park_nn3)
+
+
+# average nearest neighbor distance to 1-NN and 3-NN schools
+boulder.sf <-
+  boulder.sf %>% 
+    mutate(school_nn1 = nn_function(st_c(boulder.sf), st_c(schools.sf), 1)/1609, 
+           school_nn3 = nn_function(st_c(boulder.sf), st_c(schools.sf), 3)/1609) # in mile
+
+mean(boulder.sf$school_nn1)
+mean(boulder.sf$school_nn3)
+
+
+
+# average nearest neighbor distance to 1-NN and 3-NN playgrounds
+boulder.sf <-
+  boulder.sf %>% 
+    mutate(playground_nn1 = nn_function(st_c(boulder.sf), st_c(playgrounds.sf), 1)/1609, 
+           playground_nn3 = nn_function(st_c(boulder.sf), st_c(playgrounds.sf), 3)/1609) # in mile
+
+mean(boulder.sf$playground_nn1)
+mean(boulder.sf$playground_nn3)
+
+
+# average nearest neighbor distance to 1-NN and 3-NN lakes
+boulder.sf <-
+  boulder.sf %>% 
+    mutate(lake_nn1 = nn_function(st_c(boulder.sf), st_c(st_centroid(lakes.sf)), 1)/1609, 
+           lake_nn3 = nn_function(st_c(boulder.sf), st_c(st_centroid(lakes.sf)), 3)/1609) # in mile
+
+mean(boulder.sf$lake_nn1)
+mean(boulder.sf$lake_nn3)
+
+
+# average nearest neighbor distance to 1-NN and 3-NN parks trail heads
+boulder.sf <-
+  boulder.sf %>% 
+    mutate(trailhd_nn1 = nn_function(st_c(boulder.sf), st_c(trailheads.sf), 1)/1609,
+           trailhd_nn3 = nn_function(st_c(boulder.sf), st_c(trailheads.sf), 3)/1609) #in mile
+
+mean(boulder.sf$trailhd_nn1)
+mean(boulder.sf$trailhd_nn3)
+
+
+# attach demographic and socioeconomic data to house points
 
 
 
 ```
+
+<br />
+
+### 3.3. Exploratory Data Analysis
+
+```{r price_map, fig.height=5, fig.width=10}
+# ggplot, reorder
+
+# Mapping data
+ggplot() +
+  geom_sf(data=county_boundary, show.legend = NA, color='grey',alpha=0.5, lwd=0.3)+
+  geom_sf(data=bc.places, show.legend = NA, color='grey', lwd=0.1)+
+  geom_sf(data = boulder.sf, aes(colour = q5(PricePerSF)), 
+          show.legend = "point", size = 0.8) +
+  scale_colour_manual(values = palette5,
+                   labels=qBr(boulder.sf,"PricePerSF"),
+                   name="Quintile\nBreaks") +
+  labs(title="Price Per Square Foot, Boulder County, CO") +
+  mapTheme()
+
+# method to build html slider
+```
+
+
+<br />
+<br />
+
+
+## 4. Correlation Analysis
+[placeholder of paragraphs]
+
+<br />
+
+### 4.1. Analyzing Associations
+
+
+```{r Corellation, cache = TRUE, message = FALSE, warning = FALSE}
+
+## Home Features cor
+st_drop_geometry(boulder.sf) %>% 
+  dplyr::select(price, TotalFinishedSF, Age, mainfloorSF) %>%
+  #filter(SalePrice <= 1000000, Age < 500) %>% 
+  gather(Variable, Value, -price) %>%  
+   ggplot(aes(Value, price)) + # the x and y axes are 3 variables and sale price
+     geom_point(size = .5) + 
+     geom_smooth(method = "lm", se=F, colour = "#FA7800") + # geom_smooth is the best fit line (method is linear regression)
+     facet_wrap(~Variable, ncol = 3, scales = "free") +
+     labs(title = "Price as a function of continuous variables") +
+     plotTheme()
+```
+
+Can we resize this somehow to make it look better?
+
+```{r crime_corr, fig.height = 4, fig.width=12, cache = TRUE, message = FALSE, warning = FALSE}
+## park cor
+boulder.sf %>%
+  st_drop_geometry() %>%
+  dplyr::select(price, starts_with("park_")) %>%
+  gather(Variable, Value, -price) %>% 
+   ggplot(aes(Value, price)) +
+     geom_point(size = .5) + geom_smooth(method = "lm", se=F, colour = "#FA7800") +
+     facet_wrap(~Variable, nrow = 1, scales = "free") +
+     labs(title = "Price as a function of continuous variables") +
+     plotTheme()
+```
+
+<br />
+
+### 4.2. Correlation Matrix
+
+
+```{r correlation_matrix, fig.height=10, fig.width=10, cache = TRUE, message = FALSE, warning = FALSE}
+numericVars <- 
+  select_if(st_drop_geometry(boulder.sf), is.numeric) %>% 
+  dplyr::select(-MUSA_ID, -toPredict, -builtYear, -Stories, -UnitCount) %>% 
+  na.omit() 
+
+# only for continuous variables
+ggcorrplot(  #correlation plot
+  round(cor(numericVars), 1), 
+  p.mat = cor_pmat(numericVars),
+  show.diag = TRUE,
+  colors = c("#25CB10", "white", "#FA7800"),
+  type="lower",
+  insig = "blank") +  
+    labs(title = "Correlation across numeric variables") 
+
+# noting strongly associates with sales price
+# house size variables are closely related --- keep one or engineer them
+# crime variables are also closely related
+```
+
+
+<br />
+<br />
+
+
+## 5. Regression Analysis
+[placeholder of paragraphs]
+
+
+<br />
+
+### 5.1. Univariate Regression 1
+
+```{r simple_reg}
+areaReg <- lm(price ~ TotalFinishedSF, data = boulder.sf)
+
+summary(areaReg)
+```
+**Prediction example**
+
+```{r calculate prediction}
+new_TotalFinishedSF = 4000
+
+# "by hand"
+152932.565 + 303.609 * new_TotalFinishedSF
+
+# predict() function
+predict(areaReg, newdata = data.frame(TotalFinishedSF = 4000))
+```
+
+**Plot of marginal regression response**
+```{r effectPlot}
+effect_plot(areaReg, pred = TotalFinishedSF, interval = TRUE, plot.points = TRUE)
+```
+
+
+<br />
+
+### 5.2. Multivariate Regression
+
+```{r mutlivariate_regression}
+# can play with categorical variables?
+reg1 <- lm(price ~ ., data = st_drop_geometry(boulder.sf) %>% 
+                      dplyr::select(price, Age, designCode, qualityCode, bldgClass, ConstCode,
+                                    carStorageSF, nbrBedRoom, Ac, Heating, TotalFinishedSF, Roof_Cover, 
+                                    park_nn3, school_nn3, playground_nn3, lake_nn3))
+
+summary(reg1)
+```
+
+**Coefficient plots**
+```{r effect_plots}
+## Plot of marginal response
+effect_plot(reg1, pred = nbrBedRoom, interval = TRUE, plot.points = TRUE)
+
+## Plot coefficients
+plot_summs(reg1)
+
+## plot multiple model coeffs
+plot_summs(reg1, areaReg)
+
+```
+
+
+<br />
+<br />
+
+
+## 6. Neighborhood Model
+[placeholder of paragraphs]
+
+
+
+
+
+<br />
+<br />
+
+## 7. Conclusion
+[placeholder of paragraphs]
+
+
+
+
+
+
+
