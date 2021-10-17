@@ -49,7 +49,9 @@ options(scipen=999)
 options(tigris_class = "sf")
 options(tigris_use_cache = TRUE)
 
-root.dir = "C:/Users/11486/Box/2021Fall/CPLN592/Assignments/Midterm/MUSA508_midterm"
+# functions and data directory
+root.dir = "https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/DATA/"
+source("https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/functions.r")
 ```
 
 **Loading Styling Options**
@@ -132,7 +134,19 @@ boulder.sf <-
   st_read("studentData.geojson", crs="ESRI:102254") %>%
   st_transform('ESRI:102254') %>%  # "NAD_1983_HARN_StatePlane_Colorado_North_FIPS_0501"
   st_make_valid() %>% 
-  mutate(Age = 2021 - builtYear)
+  mutate(Age = 2021 - builtYear,
+         PricePerSF = price/TotalFinishedSF)
+
+boulder.sf <- transform(boulder.sf, qualityCode = as.character(qualityCode), 
+                        bldgClass = as.character(bldgClass),
+                        ConstCode = as.character(ConstCode),
+                        Ac = as.character(Ac),
+                        Heating = as.character(Heating),
+                        ExtWallPrim = as.character(ExtWallPrim),
+                        ExtWallSec = as.character(ExtWallSec),
+                        IntWall = as.character(IntWall),
+                        Roof_Cover = as.character(Roof_Cover))
+
 
 boulder.sf[2638,]$price <- 315000 #mistake input as 31500000, checked on zillow
 
@@ -286,6 +300,7 @@ bc.places <-
   st_sf() 
 
 # read in ACS 5yr 2015-19 estimates
+# variables: population density, poverty rate, median household income, white population percent, 
 tractsBC19 <- 
   get_acs(geography = "tract", variables = c("B01001_001","B02001_002","B15001_050",
                                              "B15001_009","B19013_001","B25058_001",
@@ -302,7 +317,9 @@ tractsBC19 <-
   dplyr::select(-NAME, -starts_with("B")) %>%
   mutate(pctWhite = ifelse(TotalPop > 0, Whites / TotalPop,0), # avoid of NAs
          pctBachelors = ifelse(TotalPop > 0, ((FemaleBachelors + MaleBachelors) / TotalPop),0),
-         pctPoverty = ifelse(TotalPop > 0, TotalPoverty / TotalPop, 0),
+         pctPoverty = ifelse(TotalPop > 0, TotalPoverty / TotalPop, 0), 
+         areaSqMi = as.numeric(st_area(.))*0.00000038610215855, 
+         popDensity = TotalPop/areaSqMi,
          year = "2019") %>%
   dplyr::select(-Whites, -FemaleBachelors, -MaleBachelors, -TotalPoverty) 
 
@@ -323,24 +340,106 @@ ggplot() +
 
 ```
 
+<br />
 
-### 3.2. Data Cleaning
+### 3.2. Feature Engineering
+
+```{r feature_engineering, cache = TRUE, message = FALSE, warning = FALSE}
+# number of bus tops within 0.5 mile and within 0.25 mile
+
+boulder.sf <-
+  st_intersection(x = st_buffer(boulder.sf, 1609*0.5), y = bus_stops.sf) %>%
+  group_by(MUSA_ID) %>%
+  summarise(BusStop_hfMi = count(.))
+  
+
+boulder.sf$BusStop_qtrMi =
+    st_buffer(boulder.sf, 1609*0.25) %>% # meter to mile
+    aggregate(mutate(bus_stops.sf, counter = 1),., sum) %>%
+    pull(counter)
 
 
 
+# average nearest neighbor distance to 1-NN and 3-NN parks
+st_c <- st_coordinates #st_c(coordinates)
 
+boulder.sf <-
+  boulder.sf %>% 
+    mutate(park_nn1 = nn_function(st_c(boulder.sf), st_c(st_centroid(parks.sf)), 1)/1609,
+           park_nn3 = nn_function(st_c(boulder.sf), st_c(st_centroid(parks.sf)), 3)/1609) #in mile
+
+mean(boulder.sf$park_nn1)
+mean(boulder.sf$park_nn3)
+
+
+# average nearest neighbor distance to 1-NN and 3-NN schools
+boulder.sf <-
+  boulder.sf %>% 
+    mutate(school_nn1 = nn_function(st_c(boulder.sf), st_c(schools.sf), 1)/1609, 
+           school_nn3 = nn_function(st_c(boulder.sf), st_c(schools.sf), 3)/1609) # in mile
+
+mean(boulder.sf$school_nn1)
+mean(boulder.sf$school_nn3)
+
+
+
+# average nearest neighbor distance to 1-NN and 3-NN playgrounds
+boulder.sf <-
+  boulder.sf %>% 
+    mutate(playground_nn1 = nn_function(st_c(boulder.sf), st_c(playgrounds.sf), 1)/1609, 
+           playground_nn3 = nn_function(st_c(boulder.sf), st_c(playgrounds.sf), 3)/1609) # in mile
+
+mean(boulder.sf$playground_nn1)
+mean(boulder.sf$playground_nn3)
+
+
+# average nearest neighbor distance to 1-NN and 3-NN lakes
+boulder.sf <-
+  boulder.sf %>% 
+    mutate(lake_nn1 = nn_function(st_c(boulder.sf), st_c(st_centroid(lakes.sf)), 1)/1609, 
+           lake_nn3 = nn_function(st_c(boulder.sf), st_c(st_centroid(lakes.sf)), 3)/1609) # in mile
+
+mean(boulder.sf$lake_nn1)
+mean(boulder.sf$lake_nn3)
+
+
+# average nearest neighbor distance to 1-NN and 3-NN parks trail heads
+boulder.sf <-
+  boulder.sf %>% 
+    mutate(trailhd_nn1 = nn_function(st_c(boulder.sf), st_c(trailheads.sf), 1)/1609,
+           trailhd_nn3 = nn_function(st_c(boulder.sf), st_c(trailheads.sf), 3)/1609) #in mile
+
+mean(boulder.sf$trailhd_nn1)
+mean(boulder.sf$trailhd_nn3)
+
+
+# attach demographic and socioeconomic data to house points
+
+
+
+```
 
 <br />
 
-### 3.3. Feature Engineering
+### 3.3. Exploratory Data Analysis
 
+```{r price_map, fig.height=5, fig.width=10}
+# ggplot, reorder
 
+# Mapping data
+ggplot() +
+  geom_sf(data=county_boundary, show.legend = NA, color='grey',alpha=0.5, lwd=0.3)+
+  geom_sf(data=bc.places, show.legend = NA, color='grey', lwd=0.1)+
+  geom_sf(data = boulder.sf, aes(colour = q5(PricePerSF)), 
+          show.legend = "point", size = 0.8) +
+  scale_colour_manual(values = palette5,
+                   labels=qBr(boulder.sf,"PricePerSF"),
+                   name="Quintile\nBreaks") +
+  labs(title="Price Per Square Foot, Boulder County, CO") +
+  mapTheme()
 
-<br />
-
-### 3.4. Exploratory Data Analysis
-
-
+# method to build html slider
+```
 
 
 <br />
@@ -355,11 +454,61 @@ ggplot() +
 ### 4.1. Analyzing Associations
 
 
+```{r Corellation, cache = TRUE, message = FALSE, warning = FALSE}
+
+## Home Features cor
+st_drop_geometry(boulder.sf) %>% 
+  dplyr::select(price, TotalFinishedSF, Age, mainfloorSF) %>%
+  #filter(SalePrice <= 1000000, Age < 500) %>% 
+  gather(Variable, Value, -price) %>%  
+   ggplot(aes(Value, price)) + # the x and y axes are 3 variables and sale price
+     geom_point(size = .5) + 
+     geom_smooth(method = "lm", se=F, colour = "#FA7800") + # geom_smooth is the best fit line (method is linear regression)
+     facet_wrap(~Variable, ncol = 3, scales = "free") +
+     labs(title = "Price as a function of continuous variables") +
+     plotTheme()
+```
+
+Can we resize this somehow to make it look better?
+
+```{r crime_corr, fig.height = 4, fig.width=12, cache = TRUE, message = FALSE, warning = FALSE}
+## park cor
+boulder.sf %>%
+  st_drop_geometry() %>%
+  dplyr::select(price, starts_with("park_")) %>%
+  gather(Variable, Value, -price) %>% 
+   ggplot(aes(Value, price)) +
+     geom_point(size = .5) + geom_smooth(method = "lm", se=F, colour = "#FA7800") +
+     facet_wrap(~Variable, nrow = 1, scales = "free") +
+     labs(title = "Price as a function of continuous variables") +
+     plotTheme()
+```
 
 <br />
 
 ### 4.2. Correlation Matrix
 
+
+```{r correlation_matrix, fig.height=10, fig.width=10, cache = TRUE, message = FALSE, warning = FALSE}
+numericVars <- 
+  select_if(st_drop_geometry(boulder.sf), is.numeric) %>% 
+  dplyr::select(-MUSA_ID, -toPredict, -builtYear, -Stories, -UnitCount) %>% 
+  na.omit() 
+
+# only for continuous variables
+ggcorrplot(  #correlation plot
+  round(cor(numericVars), 1), 
+  p.mat = cor_pmat(numericVars),
+  show.diag = TRUE,
+  colors = c("#25CB10", "white", "#FA7800"),
+  type="lower",
+  insig = "blank") +  
+    labs(title = "Correlation across numeric variables") 
+
+# noting strongly associates with sales price
+# house size variables are closely related --- keep one or engineer them
+# crime variables are also closely related
+```
 
 
 <br />
@@ -372,21 +521,57 @@ ggplot() +
 
 <br />
 
-### 5.1. Multivariate Regression 1
+### 5.1. Univariate Regression 1
 
+```{r simple_reg}
+areaReg <- lm(price ~ TotalFinishedSF, data = boulder.sf)
+
+summary(areaReg)
+```
+**Prediction example**
+
+```{r calculate prediction}
+new_TotalFinishedSF = 4000
+
+# "by hand"
+152932.565 + 303.609 * new_TotalFinishedSF
+
+# predict() function
+predict(areaReg, newdata = data.frame(TotalFinishedSF = 4000))
+```
+
+**Plot of marginal regression response**
+```{r effectPlot}
+effect_plot(areaReg, pred = TotalFinishedSF, interval = TRUE, plot.points = TRUE)
+```
 
 
 <br />
 
-### 5.2. Multivariate Regression 2
+### 5.2. Multivariate Regression
 
+```{r mutlivariate_regression}
+# can play with categorical variables?
+reg1 <- lm(price ~ ., data = st_drop_geometry(boulder.sf) %>% 
+                      dplyr::select(price, Age, designCode, qualityCode, bldgClass, ConstCode,
+                                    carStorageSF, nbrBedRoom, Ac, Heating, TotalFinishedSF, Roof_Cover, 
+                                    park_nn3, school_nn3, playground_nn3, lake_nn3))
 
+summary(reg1)
+```
 
-<br />
+**Coefficient plots**
+```{r effect_plots}
+## Plot of marginal response
+effect_plot(reg1, pred = nbrBedRoom, interval = TRUE, plot.points = TRUE)
 
-### 5.3. Prediction Examples
+## Plot coefficients
+plot_summs(reg1)
 
+## plot multiple model coeffs
+plot_summs(reg1, areaReg)
 
+```
 
 
 <br />
