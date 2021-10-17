@@ -49,8 +49,8 @@ parcels <-
   st_transform(st_crs(boulder.sf))
 
 boulder.sf <- st_join(boulder.sf, tracts) 
-boulder.sf <- st_join(boulder.sf, parcels) %>% 
-  select(!c(51:54, 56:58, 61:65, 67:60)) 
+boulder.sf <- st_join(boulder.sf, parcels)
+
 
 #available_features() #amenity, shop, natural, highway, building
 
@@ -91,6 +91,12 @@ trailheads.sf <-
   st_read("https://opendata.arcgis.com/datasets/3a950053bbef46c6a3c2abe3aceee3de_0.geojson") %>%
   st_transform(st_crs(boulder.sf))
 
+boulder.sf <- 
+  mutate(boulder.sf, water.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 660), water.sf))) %>% 
+  mutate(boulder.sf, playground.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 660), playgrounds.sf))) %>% 
+  mutate(boulder.sf, school.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 660), schools.sf))) %>% 
+  mutate(boulder.sf, parks.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 660), parks.sf)))
+
 ggplot() +
   geom_sf(data=county_boundary, color="white")+
   geom_sf(data=tracts, alpha=.4)+
@@ -98,12 +104,6 @@ ggplot() +
           show.legend = "point", size = 0.3)+
   scale_color_brewer(type=seq, palette = "YlOrRd")+
   mapTheme()
-
-boulder.sf <- 
-  mutate(boulder.sf, water.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 660), water.sf))) %>% 
-  mutate(boulder.sf, playground.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 660), playgrounds.sf))) %>% 
-  mutate(boulder.sf, school.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 660), schools.sf))) %>% 
-  mutate(boulder.sf, parks.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 660), parks.sf)))
 
 st_drop_geometry(boulder.sf) %>% 
   dplyr::select(price, TotalFinishedSF, Age, playground.Buffer, SHAPEarea, school.Buffer) %>%
@@ -117,7 +117,8 @@ st_drop_geometry(boulder.sf) %>%
 
 numericVars <- 
   select_if(st_drop_geometry(boulder.sf), is.numeric) %>% 
-  dplyr::select(-MUSA_ID, -toPredict, -builtYear, -Stories, -UnitCount) %>% 
+  dplyr::select(-MUSA_ID, -toPredict, -builtYear, -Stories, -UnitCount,
+                -OBJECTID, -SHAPElen) %>% 
   na.omit() 
 
 # only for continuous variables
