@@ -205,5 +205,69 @@ bothRegressions <-
   rbind(
     dplyr::select(boulder.test, starts_with("price"), Regression, NAME.y) %>%
       mutate(lagPriceError = lag.listw(spatialWeights.test, price.Error)),
-    dplyr::select(boulder.test, starts_with("price"), Regression, NAME.y) %>%
+    dplyr::select(boulder.test.nhood, starts_with("price"), Regression, NAME.y) %>%
       mutate(lagPriceError = lag.listw(spatialWeights.test, price.Error)))  
+
+st_drop_geometry(bothRegressions) %>%
+  gather(Variable, Value, -Regression, -NAME.y) %>%
+  filter(Variable == "price.AbsError" | Variable == "price.APE") %>%
+  group_by(Regression, Variable) %>%
+  summarize(meanValue = mean(Value, na.rm = T)) %>%
+  spread(Variable, meanValue) %>%
+  kable()
+
+bothRegressions %>%
+  dplyr::select(price.Predict, price, Regression) %>%
+  ggplot(aes(price, price.Predict)) +
+  geom_point() +
+  stat_smooth(aes(price, price), 
+              method = "lm", se = FALSE, size = 1, colour="#FA7800") + 
+  stat_smooth(aes(price.Predict, price), 
+              method = "lm", se = FALSE, size = 1, colour="#25CB10") +
+  facet_wrap(~Regression) +
+  labs(title="Predicted sale price as a function of observed price",
+       subtitle="Orange line represents a perfect prediction; Green line represents prediction") +
+  plotTheme()
+
+st_drop_geometry(bothRegressions) %>%
+  group_by(Regression, NAME.y) %>%
+  summarize(mean.MAPE = mean(price.APE, na.rm = T)) %>%
+  ungroup() %>% 
+  left_join(tracts, by = "NAME") %>%
+  st_sf() %>%
+  ggplot() + 
+  geom_sf(aes(fill = mean.MAPE)) +
+  geom_sf(data = bothRegressions, colour = "black", size = .5) +
+  facet_wrap(~Regression) +
+  scale_fill_gradient(low = palette5[1], high = palette5[5],
+                      name = "MAPE") +
+  labs(title = "Mean test Set MAPE by Census Tract") +
+  mapTheme()
+
+tracts19 <- 
+  get_acs(geography = "tract", variables = c("B01001_001E","B01001A_001E","B19013_001"), 
+          year = 2019, state=08, county=013, geometry=T, output = "wide", survey = "acs5") %>%
+  st_transform('ESRI:102254')  %>%
+  rename(TotalPop = B01001_001E,
+         NumberWhites = B01001A_001E,
+         Median_Income = B19013_001E) %>%
+  mutate(percentWhite = NumberWhites / TotalPop,
+         raceContext = ifelse(percentWhite > .5, "Majority White", "Majority Non-White"),
+         incomeContext = ifelse(Median_Income > 83019, "High Income", "Low Income")) #https://www.census.gov/quickfacts/bouldercountycolorado
+
+grid.arrange(ncol = 2,
+             ggplot() + geom_sf(data = na.omit(tracts19), aes(fill = raceContext)) +
+               scale_fill_manual(values = c("#25CB10", "#FA7800"), name="Race Context") +
+               labs(title = "Race Context") +
+               mapTheme() + theme(legend.position="bottom"), 
+             ggplot() + geom_sf(data = na.omit(tracts19), aes(fill = incomeContext)) +
+               scale_fill_manual(values = c("#25CB10", "#FA7800"), name="Income Context") +
+               labs(title = "Income Context") +
+               mapTheme() + theme(legend.position="bottom"))
+
+st_join(bothRegressions, tracts19) %>% 
+  group_by(Regression, raceContext) %>%
+  summarize(mean.MAPE = scales::percent(mean(SalePrice.APE, na.rm = T))) %>%
+  st_drop_geometry() %>%
+  spread(raceContext, mean.MAPE) %>%
+  kable(caption = "Test set MAPE by neighborhood racial context")
