@@ -92,10 +92,10 @@ trailheads.sf <-
   st_transform(st_crs(boulder.sf))
 
 boulder.sf <- 
-  mutate(boulder.sf, water.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 660), water.sf))) %>% 
-  mutate(boulder.sf, playground.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 660), playgrounds.sf))) %>% 
-  mutate(boulder.sf, school.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 660), schools.sf))) %>% 
-  mutate(boulder.sf, parks.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 660), parks.sf)))
+  mutate(boulder.sf, water.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 804), water.sf))) %>% 
+  mutate(boulder.sf, playground.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 804), playgrounds.sf))) %>% 
+  mutate(boulder.sf, school.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 804), schools.sf))) %>% 
+  mutate(boulder.sf, parks.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 804), parks.sf)))
 
 ggplot() +
   geom_sf(data=county_boundary, color="white")+
@@ -142,7 +142,7 @@ plot_summs(reg1)
 inTrain <- createDataPartition(
   y = paste(boulder.sf$NAME.y, boulder.sf$bsmtType, 
             boulder.sf$qualityCode, boulder.sf$AcDscr), 
-  p = .60, list = FALSE)
+  p = .75, list = FALSE)
 boulder.training <- boulder.sf[inTrain,] 
 boulder.test <- boulder.sf[-inTrain,]  
 
@@ -174,7 +174,8 @@ boulder.test %>%
   ggplot(aes(lagPriceError, price.Error))
 
 summary(boulder.test)
-
+moranTest <- moran.mc(boulder.test$price.Error, 
+                      spatialWeights.test, nsim = 999)
 left_join(
   st_drop_geometry(boulder.test) %>%
     group_by(NAME.y) %>%
