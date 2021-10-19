@@ -263,7 +263,7 @@ boulder.sf <-
 
 boulder.sf <- 
   st_join(boulder.sf, tracts.sf) %>% 
-  mutate(boulder.sf, stop.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 804), bus_stops.sf)))
+  mutate(boulder.sf, stop.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 804), bus_stops.sf))) 
 
 boulder.sf <-
   st_join(boulder.sf, places)
@@ -319,17 +319,19 @@ ggplot() +
   mapTheme()
 ```
 
-```{r Corellation, cache = TRUE, message = FALSE, warning = FALSE，fig.height = 4, fig.width=12, }
+```{r Corellation, cache = TRUE, message = FALSE, warning = FALSE，fig.height =8 , fig.width=10, fig.align='center'}
 ## Home Features cor
 st_drop_geometry(boulder.sf) %>% 
-  dplyr::select(price, TotalFinishedSF, Age, mainfloorSF) %>%
+  dplyr::select(price, TotalFinishedSF, park_nn3, school_nn3, floodplain) %>%
   #filter(SalePrice <= 1000000, Age < 500) %>% 
   gather(Variable, Value, -price) %>%  
    ggplot(aes(Value, price)) + # the x and y axes are 3 variables and sale price
+   scale_y_continuous(breaks=c(2000000,4000000,6000000), labels=c("$2,000,000","$4,000,000","$6,000,000"))+
      geom_point(size = .5) + 
      geom_smooth(method = "lm", se=F, colour = "#FA7800") + # geom_smooth is the best fit line (method is linear regression)
-     facet_wrap(~Variable, ncol = 3, scales = "free") +
-     labs(title = "Price as a function of continuous variables") +
+     facet_wrap(~Variable, ncol = 2, scales = "free") +
+     labs(title = "Price as a Function of Selected Open Data") +
+     
      plotTheme()
 ```
 
@@ -448,6 +450,7 @@ boulder.test <-
   mutate(boulder.test, 
          lagPrice = lag.listw(spatialWeights.test, boulder.test$price, zero.policy=TRUE, NAOK = TRUE),
          lagPriceError = lag.listw(spatialWeights.test, boulder.test$price.Error, zero.policy=TRUE, NAOK = TRUE))
+
 ```
 
 ```{r moransI, cache = TRUE, message = FALSE, warning = FALSE}
@@ -514,6 +517,16 @@ st_drop_geometry(bothRegressions) %>%
     kable()
 ```
 
+```{r spatial lag plot}
+
+ggplot(data=bothRegressions)+
+  geom_point(aes(lagPriceError, price))+
+  stat_smooth(aes(lagPriceError, price), 
+              method = "lm", se = FALSE, size = 1, colour="#25CB10") +
+  facet_wrap(~Regression)
+
+```
+
 ```{r accuracy_plot, cache = TRUE, message = FALSE, warning = FALSE, fig.height=4, fig.width=8}
 bothRegressions %>%
   dplyr::select(price.Predict, price, Regression) %>%
@@ -529,7 +542,7 @@ bothRegressions %>%
   plotTheme()
 ```
 
-```{r mape_plot, cache = TRUE, message = FALSE, warning = FALSE, fig.height=4, fig.width=8}
+```{r mape_plot, cache = TRUE, message = FALSE, warning = FALSE, fig.height=5, fig.width=10}
 st_drop_geometry(bothRegressions) %>%
   group_by(Regression, GEOID.x) %>%
   summarize(mean.MAPE = mean(price.APE, na.rm = T)) %>%
@@ -537,15 +550,15 @@ st_drop_geometry(bothRegressions) %>%
   left_join(tractsBC19, by = c("GEOID.x" = "GEOID")) %>%
     st_sf() %>%
     ggplot() + 
-      geom_sf(aes(fill = mean.MAPE)) +
-      geom_sf(data = bothRegressions, colour = "black", size = .5) +
+      geom_scatter(aes(fill = mean.MAPE)) +
+      geom_point(data = bothRegressions, colour = "black", size = 0.25) +
       facet_wrap(~Regression) +
       scale_fill_gradient(low = palette5[1], high = palette5[5],
                           name = "MAPE") +
       labs(title = "Mean test set MAPE by neighborhood") +
       mapTheme()
 ```
-```{r context_map, cache = TRUE, message = FALSE, warning = FALSE, fig.height=4, fig.width=8}
+```{r context_map, cache = TRUE, message = FALSE, warning = FALSE, fig.height=5, fig.width=10}
 grid.arrange(ncol = 2,
   ggplot() + geom_sf(data = na.omit(tractsBC19), aes(fill = raceContext)) +
     scale_fill_manual(values = c("#25CB10", "#FA7800"), name="Race Context") +
@@ -564,5 +577,6 @@ st_join(bothRegressions, tractsBC19) %>%
   summarize(mean.MAPE = scales::percent(mean(price.APE, na.rm = T))) %>%
   st_drop_geometry() %>%
   spread(incomeContext, mean.MAPE) %>%
-  kable(caption = "Test set MAPE by neighborhood income context")
+  kable(caption = "Test set MAPE by neighborhood income context") %>% 
+  kable_styling()
 ```
