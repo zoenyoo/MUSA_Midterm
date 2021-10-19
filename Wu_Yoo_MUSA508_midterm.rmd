@@ -10,8 +10,19 @@ output:
 ---
 ```{r photo}
 url <- "http://www.online-image-editor.com//styles/2014/images/example_image.png"
-
 ```
+![ ](`r url`)
+#Zillow Model Update: Boulder County, CO
+
+####Jasmine Siyu Wu
+####Zoe Yoo
+
+##Introduction
+
+Through user feedback and data analysis, Zillow has found that their current predictions for homes in Boulder County, CO are unusually inaccurate compared to other areas and states. Compared to more traditional cities, Boulder and its surrounding area have unique characteristics; this contributes to a weaker relationship between selected variables used for countrywide analysis and housing prices. As such, our group has been tasked with incorporating additional cultural and physical factors of Boulder County into the model to increase its accuracy and reliability.
+
+Though this model is centered around Boulder County, its enhancement is applicable to many other areas. Boulder, and Boulder County by extension, has a close proximity to many natural areas, in addition to a fairly new urban framework and low median age of existing buildings. These characteristics are similar to many, more recently established Western cities than those on the East Coast. Boulder County is still very dominantly white, with the Census estimating in 2019 that 77.4% of the county is white (non-Hispanic); it is also not densely populated, particularly in comparison to urban counties. Being a peri-urban center outside of Denver, Boulder is a useful area to improve our model for because many U.S. cities have similar ‘exterior’ cities of which property values have been understudied in the past, but are essential to the wider urban framework. 
+
 
 ```{r setup, cache = FALSE, message = FALSE, warning=FALSE}
 knitr::opts_chunk$set(echo = TRUE,fig.width = 10, fig.height = 5)
@@ -96,6 +107,11 @@ qBr <- function(df, variable, rnd) {
 q5 <- function(variable) {as.factor(ntile(variable, 5))}
 palette5 <- c("#eff3ff", "#bdd7e7", "#6baed6", "#3182bd", "#08519c")
 ```
+
+##Data Exploration 
+###Gathering Data
+
+The home price data our group used for training the model was released in 2021 by the Boulder County Assessor’s Office. The Boulder County Assessor’s Office distributes data relating to buildings, land, and permits, among others, but our base dataset was that of home sales between 2019-2021. As can be seen in the map below, home prices are clearly not random, but tied to local geography.
 
 ```{r read_data, include=FALSE, echo=FALSE, results=FALSE, warning=FALSE, message=FALSE}
 # read in boulder training data
@@ -319,23 +335,10 @@ ggplot() +
   mapTheme()
 ```
 
-```{r Corellation, cache = TRUE, message = FALSE, warning = FALSE，fig.height =8 , fig.width=10, fig.align='center'}
-## Home Features cor
-st_drop_geometry(boulder.sf) %>% 
-  dplyr::select(price, TotalFinishedSF, park_nn3, school_nn3, floodplain) %>%
-  #filter(SalePrice <= 1000000, Age < 500) %>% 
-  gather(Variable, Value, -price) %>%  
-   ggplot(aes(Value, price)) + # the x and y axes are 3 variables and sale price
-   scale_y_continuous(breaks=c(2000000,4000000,6000000), labels=c("$2,000,000","$4,000,000","$6,000,000"))+
-     geom_point(size = .5) + 
-     geom_smooth(method = "lm", se=F, colour = "#FA7800") + # geom_smooth is the best fit line (method is linear regression)
-     facet_wrap(~Variable, ncol = 2, scales = "free") +
-     labs(title = "Price as a Function of Selected Open Data") +
-     
-     plotTheme()
-```
+Because sale price is so intricately tied to spatial structure, examining spatially related factors was a central part of our work on this model. Much of home price prediction is based on internal characteristics, such as total square footage, age, type of home, and the presence of central heating/air conditioning. Outside of basic home characteristics, our group searched out and vetted local characteristics that might have correlations to home price. For example, we examined factors like neighborhood, proximity to schools/location in highly-rated school districts, proximity to floodplains or water, presence of amenities like parks or trails, and proximity to highways. Though crime is also an important correlator to home price, crime data was not publicly available at a specific enough level to be integrated into the prediction model. 
+EXPLAIN WHY WE INCLUDED THE THREE MAPS
 
-```{r variable_maps}
+```{r variable_maps, warning=FALSE}
 #map 1: 
 ggplot() +
   geom_sf(data=county_boundary, color="white")+
@@ -363,6 +366,41 @@ ggplot() +
 
 ```
 
+###Finding Correlation
+```{r summary statistics table}
+
+boulder.sf %>% 
+  st_drop_geometry() %>% 
+  select(-saleDate,
+         -year, -year_quarter, -address, -bld_num, -section_num,
+         -designCode, -qualityCode, -bldgClass, -ConstCode,
+         -CompCode, -EffectiveYear, -bsmtType, -carStorageType,
+         -Ac, -Heating, -ExtWallPrim, -ExtWallSec, -IntWall,
+         -Roof_Cover, -status_cd, -MUSA_ID, -toPredict, 
+         -UnitCount, -Stories, -c(51:87)) %>%
+  head() %>% 
+  kable(align='c', caption="Internal Characteristics") %>% 
+  kable_styling()
+
+boulder.sf %>% 
+  st_drop_geometry() %>% 
+  select(-c(1:72, 74:77, 86:87)) %>% 
+  head() %>% 
+  kable(align='c', caption="External Characteristics/Amenities",
+        digits=2) %>% 
+  kable_styling()
+
+boulder.sf %>% 
+  st_drop_geometry() %>% 
+  select(GEOID.y, NAMELSAD, NAME.y) %>% 
+  head() %>% 
+  kable(align='c', caption="Spatial Structure") %>% 
+  kable_styling()
+```
+
+-- Explain the table above, and how the correlations are shown in the matrix below. Also mention multicollinearity
+The problem with looking at all variables at once is that of multicollinearity, or the presence of variables that are highly related; a good example of this is number of bedrooms and number of rooms overall, which are both closely tied to home price but also correlated with each other.
+
 ```{r correlation_matrix, fig.height=10, fig.width=10, cache = TRUE, message = FALSE, warning = FALSE}
 numericVars <- 
   select_if(st_drop_geometry(boulder.sf), is.numeric) %>% 
@@ -384,13 +422,38 @@ ggcorrplot(  #correlation plot
 ```
 
 
+-- talk about which variables were interesting among open data, and why we wanted to look at them more (perhaps reference the correlation matrix above), and explain the scatterplots
+
+
+```{r Corellation, cache = TRUE, message = FALSE, warning = FALSE，fig.height =8 , fig.width=10, fig.align='center'}
+
+st_drop_geometry(boulder.sf) %>% 
+  dplyr::select(price, TotalFinishedSF, park_nn3, school_nn3, stop.Buffer) %>%
+  #filter(SalePrice <= 1000000, Age < 500) %>% 
+  gather(Variable, Value, -price) %>%  
+   ggplot(aes(Value, price)) + # the x and y axes are 3 variables and sale price
+   scale_y_continuous(breaks=c(2000000,4000000,6000000), labels=c("$2,000,000","$4,000,000","$6,000,000"))+
+     geom_point(size = .5) + 
+     geom_smooth(method = "lm", se=F, colour = "#FA7800") + # geom_smooth is the best fit line (method is linear regression)
+     facet_wrap(~Variable, ncol = 2, scales = "free") +
+     labs(title = "Price as a Function of Selected Open Data") +
+     
+     plotTheme()
+```
+
+##Model Methodology 
+
+Our method of prediction is through Linear Regression, or Ordinary Least Squares (OLS) Regression. This method takes in several different variables that we choose and creates a linear model based on these components; this is also termed as a 'hedonic model.' The ultimate premise of the hedonic model is to identify which characteristics, both internal characteristics such as square footage and age and external characteristics such as nearby amenities, are the best predictors (have the greatest effect) on overall home prices. "Least Squares" refers to the slope of the line, which is calculated by minimizing the squared difference between the prediction and observed prices.
+
+Linear regression can be done with just one variable, which we have shown below in the case of `TotalFinishedSF`, or total finished square footage. The main values we considered are residual standard error, R^2^, and p-value. Residual standard is the error of the coefficient, which helps us understand how reliable the coefficient is. The p-value tells us whether the variable is a useful predictor, and R^2^ is a percentage 'goodness of fit' indicator. Here, since the model of `TotalFinishedSF` has an R^2^ of 0.248, about 24.8% of home price variation can be explained by `TotalFinishedSF`. By incorporating more variables into our model, we can better explain home price variation.
 
 ```{r simple_reg, cache = TRUE, message = FALSE, warning = FALSE}
 areaReg <- lm(price ~ TotalFinishedSF, data = boulder.sf)
-areaReg2 <- lm(price ~ ConstCodeDscr, data = boulder.sf)
 
-stargazer(areaReg, areaReg2, type="text")
+stargazer(areaReg, type="text")
 ```
+
+##Model Results
 
 ```{r mutlivariate_regression, cache = TRUE, message = FALSE, warning = FALSE}
 # can play with categorical variables?
@@ -401,12 +464,12 @@ reg1 <- lm(price ~ ., data = st_drop_geometry(boulder.sf) %>%
                                     park_nn3, school_nn3, playground_nn3, lake_nn3, 
                                     popDensity, pctWhite, pctBachelors))
            
-summary(reg1)
-
 reg1 %>% 
   stargazer(type="text", median=TRUE, title="Results", align=TRUE)
 
 ```
+
+--Explain the training set being 75/25
 
 ```{r baseline_regression}
 inTrain <- createDataPartition(
@@ -436,6 +499,8 @@ boulder.test <-
          price.AbsError = abs(price.Predict - price),
          price.APE = (abs(price.Predict - price))/price.Predict)
 ```
+
+
 
 ```{r spatial_lag, cache = TRUE, message = FALSE, warning = FALSE}
 coords <- st_coordinates(boulder.sf) 
