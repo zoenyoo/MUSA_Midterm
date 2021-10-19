@@ -43,6 +43,7 @@ library(osmdata)
 library(knitr)
 library(tidycensus)
 library(scales)
+library(stargazer)
 
 
 options(scipen=999) 
@@ -157,6 +158,16 @@ boulder.sf[2638,]$price <- 315000 #mistake input as 31500000, checked on zillow
 coms_dists.sf <-
   st_read("https://opendata.arcgis.com/datasets/1fb6698cad044e3fb0471d1d464049ad_0.geojson") %>%
   st_transform(st_crs(boulder.sf))
+
+coms_dists.sf <- transform(coms_dists.sf, DISTRICT = as.character(DISTRICT))
+
+# read in Boulder County municipities
+# data source: boulder county open data portal
+admin.sf <-
+  st_read("https://opendata.arcgis.com/datasets/9597d3916aba47e887ca563d5ac15938_0.geojson") %>%
+  st_transform(st_crs(boulder.sf)) %>% dplyr::select(ZONECLASS, ZONEDESC)
+
+#admin.unin <- st_combine(st_difference(county_boundary, admin.sf)) %>% mutate(ZONECLASS = "UNIN", ZONEDESC = "Unincorporated")  %>%  rename(geometry=x)
 
 
 # read in boulder county playgrounds (point)
@@ -346,18 +357,15 @@ ggplot() +
 ### 3.2. Feature Engineering
 
 ```{r feature_engineering, cache = TRUE, message = FALSE, warning = FALSE}
-# number of bus tops within 0.5 mile and within 0.25 mile
+# number of features within 0.5 mile
 
-#boulder.sf <-
-#  st_intersection(x = st_buffer(boulder.sf, 1609*0.5), y = bus_stops.sf) %>%
-#  group_by(MUSA_ID) %>%
-#  summarise(BusStop_hfMi = count(.))
-  
-
-#boulder.sf$BusStop_qtrMi =
-#    st_buffer(boulder.sf, 1609*0.25) %>% # meter to mile
-#    aggregate(mutate(bus_stops.sf, counter = 1),., sum) %>%
-#    pull(counter)
+boulder.sf <- 
+  mutate(boulder.sf, 
+         playground.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 1609/2), playgrounds.sf))) %>% 
+  mutate(boulder.sf, 
+         school.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 1609/2), schools.sf))) %>%
+  mutate(boulder.sf, 
+         parks.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 1609/2), parks.sf)))
 
 
 # average nearest neighbor distance to 1-NN and 3-NN parks
@@ -368,8 +376,8 @@ boulder.sf <-
     mutate(park_nn1 = nn_function(st_c(boulder.sf), st_c(st_centroid(parks.sf)), 1)/1609,
            park_nn3 = nn_function(st_c(boulder.sf), st_c(st_centroid(parks.sf)), 3)/1609) #in mile
 
-mean(boulder.sf$park_nn1)
-mean(boulder.sf$park_nn3)
+#mean(boulder.sf$park_nn1)
+#mean(boulder.sf$park_nn3)
 
 
 # average nearest neighbor distance to 1-NN and 3-NN schools
@@ -378,9 +386,8 @@ boulder.sf <-
     mutate(school_nn1 = nn_function(st_c(boulder.sf), st_c(schools.sf), 1)/1609, 
            school_nn3 = nn_function(st_c(boulder.sf), st_c(schools.sf), 3)/1609) # in mile
 
-mean(boulder.sf$school_nn1)
-mean(boulder.sf$school_nn3)
-
+#mean(boulder.sf$school_nn1)
+#mean(boulder.sf$school_nn3)
 
 
 # average nearest neighbor distance to 1-NN and 3-NN playgrounds
@@ -389,8 +396,8 @@ boulder.sf <-
     mutate(playground_nn1 = nn_function(st_c(boulder.sf), st_c(playgrounds.sf), 1)/1609, 
            playground_nn3 = nn_function(st_c(boulder.sf), st_c(playgrounds.sf), 3)/1609) # in mile
 
-mean(boulder.sf$playground_nn1)
-mean(boulder.sf$playground_nn3)
+#mean(boulder.sf$playground_nn1)
+#mean(boulder.sf$playground_nn3)
 
 
 # average nearest neighbor distance to 1-NN and 3-NN lakes
@@ -399,8 +406,8 @@ boulder.sf <-
     mutate(lake_nn1 = nn_function(st_c(boulder.sf), st_c(st_centroid(lakes.sf)), 1)/1609, 
            lake_nn3 = nn_function(st_c(boulder.sf), st_c(st_centroid(lakes.sf)), 3)/1609) # in mile
 
-mean(boulder.sf$lake_nn1)
-mean(boulder.sf$lake_nn3)
+#mean(boulder.sf$lake_nn1)
+#mean(boulder.sf$lake_nn3)
 
 
 # average nearest neighbor distance to 1-NN and 3-NN parks trail heads
@@ -416,7 +423,17 @@ mean(boulder.sf$lake_nn3)
 # attach demographic and socioeconomic data to house points
 boulder.sf <- 
   st_join(boulder.sf,
-          dplyr::select(tractsBC19, GEOID, MedRent, TotalPop, pctWhite, pctBachelors, pctPoverty, popDensity, raceContext, incomeContext)) 
+          dplyr::select(tractsBC19, GEOID, MedRent, TotalPop, pctWhite, pctBachelors, pctPoverty, popDensity, raceContext, incomeContext))
+
+boulder.sf <- 
+  st_join(boulder.sf,
+          dplyr::select(admin.sf, ZONECLASS, ZONEDESC)) 
+# %>% mutate(ZONEDESC = replace_na(ZONEDESC, "Unincorporated"),
+#         ZONECLASS = replace_na(ZONECLASS, "UNIN"))
+
+boulder.sf <- 
+  st_join(boulder.sf,
+          dplyr::select(coms_dists.sf, DISTRICT, Representative)) 
 
 ```
 
@@ -430,7 +447,7 @@ boulder.sf <-
 # Mapping data
 ggplot() +
   geom_sf(data=county_boundary, show.legend = NA, color='grey',alpha=0.5, lwd=0.3)+
-  geom_sf(data=bc.places, show.legend = NA, color='grey', lwd=0.1)+
+  geom_sf(data=admin.sf, show.legend = NA, color='grey', lwd=0.1)+
   geom_sf(data = boulder.sf, aes(colour = q5(PricePerSF)), 
           show.legend = "point", size = 0.8) +
   scale_colour_manual(values = palette5,
@@ -470,7 +487,6 @@ st_drop_geometry(boulder.sf) %>%
      plotTheme()
 ```
 
-Can we resize this somehow to make it look better?
 
 ```{r crime_corr, fig.height = 4, fig.width=12, cache = TRUE, message = FALSE, warning = FALSE}
 ## park cor
@@ -554,41 +570,63 @@ effect_plot(areaReg, pred = TotalFinishedSF, interval = TRUE, plot.points = TRUE
 ```{r mutlivariate_regression, cache = TRUE, message = FALSE, warning = FALSE}
 # can play with categorical variables?
 reg1 <- lm(price ~ ., data = st_drop_geometry(boulder.sf) %>% 
-                             dplyr::select(price, Age, designCode, qualityCode, ConstCode,
-                                    carStorageSF, nbrBedRoom, Ac, Heating, TotalFinishedSF, Roof_Cover,
-                                    park_nn3, school_nn3, playground_nn3, lake_nn3, 
-                                    popDensity, pctWhite, pctBachelors))
+                             dplyr::select(price, Age, qualityCode, ConstCode, bsmtType, #designCode, 
+                                    carStorageSF, nbrBedRoom, TotalFinishedSF, mainfloorSF, Roof_Cover, #nbrRoomsNobath,
+                                    nbrFullBaths, parks.Buffer, #playground.Buffer, school.Buffer,
+                                    school_nn3, playground_nn1, lake_nn3, #park_nn3, 
+                                    popDensity, pctBachelors))
            
 summary(reg1)
 ```
 
-**Coefficient plots**
-```{r effect_plots, cache = TRUE, message = FALSE, warning = FALSE}
-## Plot of marginal response
-#effect_plot(reg1, pred = nbrBedRoom, interval = TRUE, plot.points = TRUE)
+**Cross Validation**
+```{r cross_validation, cache = TRUE, message = FALSE, warning = FALSE}
+fitControl <- trainControl(method = "cv", number = 100)
+set.seed(825)
 
-## Plot coefficients
-#plot_summs(reg1)
+boulder_toPdt <- subset(boulder.sf, boulder.sf$toPredict==1)
+boulder_pdt <- subset(boulder.sf, boulder.sf$toPredict==0)
 
-## plot multiple model coeffs
-#plot_summs(reg1, areaReg)
+reg1.cv <- 
+  train(price ~ ., data = st_drop_geometry(boulder_pdt) %>% 
+                                dplyr::select(price,Age, qualityCode, ConstCode, bsmtType, #designCode, 
+                                    carStorageSF, nbrBedRoom, TotalFinishedSF, mainfloorSF, Roof_Cover, #nbrRoomsNobath,
+                                    nbrFullBaths, parks.Buffer, #playground.Buffer, school.Buffer,
+                                    school_nn3, playground_nn1, lake_nn3, #park_nn3, 
+                                    popDensity, pctBachelors), 
+     method = "lm", trControl = fitControl, na.action = na.pass)
 
+reg1.cv
+
+```
+
+
+**Distribution of MAE**
+```{r hist_MAE, cache = TRUE, message = FALSE, warning = FALSE}
+reg1.cv$resample$MAE
+
+ggplot(data=reg1.cv$resample, aes(reg1.cv$resample$MAE)) + 
+  geom_histogram(xlab = "Mean Absolute Error", ylab = "Count",  
+                 color="orange", fill="orange", bins=50) +
+  labs(title = "Distribution of MAE",
+       subtitle = "k-fold cross validation; k=100") +
+  plotTheme()
+
+# subtitle = "k-fold cross validation; k=100",
 ```
 
 
 ### 5.3. Baseline Regression
 
 ```{r baseline_regression, cache = TRUE, message = FALSE, warning = FALSE}
-boulder_toPdt <- subset(boulder.sf, boulder.sf$toPredict==1)
-boulder_pdt <- subset(boulder.sf, boulder.sf$toPredict==0)
-
 inTrain <- createDataPartition(
   y = paste(boulder_pdt$Roof_Cover,
             boulder_pdt$qualityCode, boulder_pdt$Ac), 
-  p = .60, list = FALSE) %>%
+  p = .75, list = FALSE) %>%
   append(which(boulder_pdt$qualityCode == "10")) %>%
   append(which(boulder_pdt$GEOID == "08013012300")) %>%
-  append(which(boulder_pdt$ConstCode == "410"))
+  append(which(boulder_pdt$ConstCode %in% c("410", "420"))) %>%
+  append(which(boulder_pdt$bsmtType == "LWU"))
 
 boulder.training <- boulder_pdt[inTrain,]
 boulder.test <- boulder_pdt[-inTrain,]
@@ -597,10 +635,11 @@ boulder.test <- boulder_pdt[-inTrain,]
 
 reg.training <- 
   lm(price ~ ., data = as.data.frame(boulder.training) %>% 
-       dplyr::select(price, Age, qualityCode, 
-                     carStorageSF, nbrBedRoom, TotalFinishedSF,
-                     park_nn3, school_nn3, playground_nn3, lake_nn3, 
-                     popDensity, pctWhite, pctBachelors))
+       dplyr::select(price, Age, qualityCode, ConstCode, bsmtType, #designCode, 
+                     carStorageSF, nbrBedRoom, TotalFinishedSF, mainfloorSF, #nbrRoomsNobath,
+                     nbrFullBaths, parks.Buffer, #playground.Buffer, school.Buffer,
+                     school_nn3, playground_nn1, lake_nn3, #park_nn3, 
+                     popDensity, pctBachelors))
 summary(reg.training)
 
 
@@ -686,19 +725,21 @@ ggplot(as.data.frame(moranTest$res[c(1:999)]), aes(moranTest$res[c(1:999)])) +
 # https://www.bouldercounty.org/families/disease/covid-19-information/covid-19-vaccine-information/vaccine-data/
 left_join(
   st_drop_geometry(boulder.test) %>%
-    group_by(GEOID) %>%
+    group_by(DISTRICT) %>%
     summarize(meanPrice = mean(price, na.rm = T)),
-  mutate(boulder.test, predict.fe = predict(lm(price ~ GEOID, data = boulder.test), boulder.test)) %>%
+  mutate(boulder.test, predict.fe = predict(lm(price ~ DISTRICT, data = boulder.test), boulder.test)) %>%
     st_drop_geometry %>%
-    group_by(GEOID) %>%
+    group_by(DISTRICT) %>%
       summarize(meanPrediction = mean(predict.fe))) %>%
       kable() %>% kable_styling()
 
 reg.nhood <- lm(price ~ ., data = as.data.frame(boulder.training) %>% 
-                                  dplyr::select(GEOID, price, price, Age, qualityCode, 
-                                                carStorageSF, nbrBedRoom, TotalFinishedSF,
-                                                playground_nn3))
-
+                                  dplyr::select(DISTRICT, price, Age, qualityCode, ConstCode, bsmtType, #designCode, 
+                                                carStorageSF, nbrBedRoom, TotalFinishedSF, mainfloorSF, #nbrRoomsNobath,
+                                                nbrFullBaths, parks.Buffer, #playground.Buffer, school.Buffer,
+                                                school_nn3, playground_nn1, lake_nn3, #park_nn3, 
+                                                popDensity, pctBachelors))
+summary(reg.nhood)
 
 boulder.test.nhood <-
   boulder.test %>%
@@ -715,13 +756,13 @@ boulder.test.nhood <-
 ```{r accuracy_statistics, cache = TRUE, message = FALSE, warning = FALSE}
 bothRegressions <- 
   rbind(
-    dplyr::select(boulder.test, starts_with("price"), Regression, GEOID) %>%
+    dplyr::select(boulder.test, starts_with("price"), Regression, DISTRICT) %>%
       mutate(lagPriceError = lag.listw(spatialWeights.test, price.Error)),
-    dplyr::select(boulder.test.nhood, starts_with("price"), Regression, GEOID) %>%
+    dplyr::select(boulder.test.nhood, starts_with("price"), Regression, DISTRICT) %>%
       mutate(lagPriceError = lag.listw(spatialWeights.test, price.Error)))   
 
 st_drop_geometry(bothRegressions) %>%
-  gather(Variable, Value, -Regression, -GEOID) %>%
+  gather(Variable, Value, -Regression, -DISTRICT) %>%
   filter(Variable == "price.AbsError" | Variable == "price.APE") %>%
   group_by(Regression, Variable) %>%
     summarize(meanValue = mean(Value, na.rm = T)) %>%
@@ -752,10 +793,10 @@ bothRegressions %>%
 
 ```{r mape_plot, cache = TRUE, message = FALSE, warning = FALSE, fig.height=4, fig.width=8}
 st_drop_geometry(bothRegressions) %>%
-  group_by(Regression, GEOID) %>%
+  group_by(Regression, DISTRICT) %>%
   summarize(mean.MAPE = mean(price.APE, na.rm = T)) %>%
   ungroup() %>% 
-  left_join(tractsBC19) %>%
+  left_join(coms_dists.sf) %>%
     st_sf() %>%
     ggplot() + 
       geom_sf(aes(fill = mean.MAPE)) +
@@ -767,6 +808,7 @@ st_drop_geometry(bothRegressions) %>%
       mapTheme()
 ```
 
+### 6.4. Context Neighborhood Model
 
 
 ```{r context_map, cache = TRUE, message = FALSE, warning = FALSE, fig.height=4, fig.width=8}
