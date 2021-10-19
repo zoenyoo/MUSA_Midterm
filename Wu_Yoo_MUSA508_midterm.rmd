@@ -9,15 +9,15 @@ output:
     code_folding: hide
 ---
 ```{r photo}
-url <- "http://www.online-image-editor.com//styles/2014/images/example_image.png"
+url <- "https://logos-world.net/wp-content/uploads/2020/11/Zillow-Logo.png"
 ```
 ![ ](`r url`)
-#Zillow Model Update: Boulder County, CO
+# Zillow Model Update: Boulder County, CO
 
-####Jasmine Siyu Wu
-####Zoe Yoo
+#### Jasmine Siyu Wu
+#### Zoe Yoo
 
-##Introduction
+## Introduction
 
 Through user feedback and data analysis, Zillow has found that their current predictions for homes in Boulder County, CO are unusually inaccurate compared to other areas and states. Compared to more traditional cities, Boulder and its surrounding area have unique characteristics; this contributes to a weaker relationship between selected variables used for countrywide analysis and housing prices. As such, our group has been tasked with incorporating additional cultural and physical factors of Boulder County into the model to increase its accuracy and reliability.
 
@@ -108,8 +108,8 @@ q5 <- function(variable) {as.factor(ntile(variable, 5))}
 palette5 <- c("#eff3ff", "#bdd7e7", "#6baed6", "#3182bd", "#08519c")
 ```
 
-##Data Exploration 
-###Gathering Data
+## Data Exploration 
+### Gathering Data
 
 The home price data our group used for training the model was released in 2021 by the Boulder County Assessor’s Office. The Boulder County Assessor’s Office distributes data relating to buildings, land, and permits, among others, but our base dataset was that of home sales between 2019-2021. As can be seen in the map below, home prices are clearly not random, but tied to local geography.
 
@@ -215,6 +215,12 @@ tracts.sf <-
   st_read("https://raw.githubusercontent.com/zoenyoo/MUSA_Midterm/main/Modeling_Data/SHP%20data/BoulderCounty_tracts.geojson") %>%
   st_transform(st_crs(boulder.sf))
 
+coms_dists.sf <-
+  st_read("https://opendata.arcgis.com/datasets/1fb6698cad044e3fb0471d1d464049ad_0.geojson") %>%
+  st_transform(st_crs(boulder.sf))
+
+coms_dists.sf <- transform(coms_dists.sf, DISTRICT = as.character(DISTRICT))
+
 acs_variable_list.2019 <- load_variables(2019, #year
                                          "acs5", #five year ACS estimates
                                          cache = TRUE)
@@ -279,7 +285,15 @@ boulder.sf <-
 
 boulder.sf <- 
   st_join(boulder.sf, tracts.sf) %>% 
-  mutate(boulder.sf, stop.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 804), bus_stops.sf))) 
+  mutate(boulder.sf, stop.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 804), bus_stops.sf))) %>% 
+  mutate(boulder.sf, 
+         playground.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 1609/2), playgrounds.sf))) %>% 
+  mutate(boulder.sf, 
+         school.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 1609/2), schools.sf))) %>%
+  mutate(boulder.sf, 
+         parks.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 1609/2), parks.sf))) %>% 
+  mutate(boulder.sf, 
+         highway.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 1609/2), highways.sf)))
 
 boulder.sf <-
   st_join(boulder.sf, places)
@@ -366,40 +380,86 @@ ggplot() +
 
 ```
 
-###Finding Correlation
+### Finding Correlation
 ```{r summary statistics table}
 
 boulder.sf %>% 
   st_drop_geometry() %>% 
-  select(-saleDate,
-         -year, -year_quarter, -address, -bld_num, -section_num,
-         -designCode, -qualityCode, -bldgClass, -ConstCode,
-         -CompCode, -EffectiveYear, -bsmtType, -carStorageType,
-         -Ac, -Heating, -ExtWallPrim, -ExtWallSec, -IntWall,
-         -Roof_Cover, -status_cd, -MUSA_ID, -toPredict, 
-         -UnitCount, -Stories, -c(51:87)) %>%
-  head() %>% 
-  kable(align='c', caption="Internal Characteristics") %>% 
+  select(price, builtYear, bsmtSF, carStorageSF, nbrBedRoom, nbrRoomsNobath, 
+         mainfloorSF, nbrThreeQtrBaths, nbrFullBaths, nbrHalfBaths,
+         TotalFinishedSF, Age, PricePerSF) %>%
+  summary() %>% 
+  kable(align='c', caption="Numeric Internal Characteristics",
+        digits=2, col.names = c("Price",
+                                "Year Built",
+                                "Basement SqFt",
+                                "Car Storage SqFt",
+                                "# Bedrooms",
+                                "# Rooms (Not Including Bathrooms)",
+                                "Main Floor SqFt",
+                                "# 3/4 Bathrooms",
+                                "# Full Bathrooms",
+                                "# 1/2 Bathrooms",
+                                "Total Finished SqFt",
+                                "Age",
+                                "Price per SqFt")) %>% 
   kable_styling()
 
 boulder.sf %>% 
   st_drop_geometry() %>% 
-  select(-c(1:72, 74:77, 86:87)) %>% 
+  select(price, designCodeDscr, qualityCodeDscr, bldgClassDscr,
+         ConstCodeDscr, carStorageTypeDscr, AcDscr, HeatingDscr,
+         bsmtTypeDscr, ExtWallDscrPrim, IntWallDscr, Roof_CoverDscr) %>% 
   head() %>% 
+  kable(align='c', caption="Categorical Internal Characteristics",
+        col.names = c("Price", "Design Code",
+                      "Quality Code",
+                      "Building Class",
+                      "Construction Code",
+                      "Car Storage",
+                      "Air Conditioning Type",
+                      "Heating Type",
+                      "Basement Type",
+                      "Exterior Wall Material",
+                      "Internal Wall Material",
+                      "Roof Material")) %>%
+  kable_styling()
+
+boulder.sf %>% 
+  st_drop_geometry() %>% 
+  select(price, highway.Buffer, stop.Buffer, park_nn1, park_nn3, parks.Buffer, school_nn1, school_nn3,
+         school.Buffer, playground_nn1, playground_nn3, playground.Buffer, 
+         lake_nn1, lake_nn3) %>% 
+  summary() %>% 
   kable(align='c', caption="External Characteristics/Amenities",
-        digits=2) %>% 
+        digits=2, col.names = c("Price", "Bus Stop (1/2 mile Buffer",
+                      "Highways (1/2 mile Buffer",
+                      "Parks (First Nearest Neighbor)",
+                      "Parks (Three Nearest Neighbors)",
+                      "Parks (1/2 mile Buffer)",
+                      "Schools (First Nearest Neighbor)",
+                      "Schools (Three Nearest Neighbors)",
+                      "Schools (1/2 mile Buffer)",
+                      "Playgrounds (First Nearest Neighbor)",
+                      "Playgrounds (Three Nearest Neighbors)",
+                      "Playgrounds (1/2 mile Buffer)",
+                      "Lakes (First Nearest Neighbor)",
+                      "Lakes (Three Nearest Neighbors)")) %>% 
   kable_styling()
 
 boulder.sf %>% 
   st_drop_geometry() %>% 
-  select(GEOID.y, NAMELSAD, NAME.y) %>% 
+  select(price, NAMELSAD, NAME.y) %>% 
   head() %>% 
-  kable(align='c', caption="Spatial Structure") %>% 
+  kable(align='c', caption="Spatial Structure", 
+        col.names = c("Price", "Census Tract", "Municipality")) %>% 
   kable_styling()
+                      
 ```
 
--- Explain the table above, and how the correlations are shown in the matrix below. Also mention multicollinearity
-The problem with looking at all variables at once is that of multicollinearity, or the presence of variables that are highly related; a good example of this is number of bedrooms and number of rooms overall, which are both closely tied to home price but also correlated with each other.
+Above, we have included several summary tables of the variables we considered, separated by type. Numeric internal characteristics and categorical are separated to describe them more accurately. The categorical internal characteristics are not summarized, but merely show the first few entries to give an idea of what the categories include; for example, under heating, we can see that there is variation between hot water and forced air. External characteristics include both "nearest neighbor" calculations of the average distance (in miles) from each home and the nearest specified number of amenities, and "buffer" calculations of how many amenities are within a half-mile radius. Lastly included is a simple table of examples of the spatial contexts available for use; census tracts are more akin to neighborhoods, while municipalities (NA values are unincorporated areas) give a more general idea of price clustering.
+
+The problem with looking at all variables at once is that of multicollinearity, or the presence of variables that are highly related; a good example of this is number of bedrooms and number of rooms overall, which are both closely tied to home price but also correlated with each other. Thus, we did not use all of the shown above for our predictive model, but had to decide which were the most applicable; among other tools, we used a correlation matrix (shown below) to quickly see where there might be correlation between numeric variables.
 
 ```{r correlation_matrix, fig.height=10, fig.width=10, cache = TRUE, message = FALSE, warning = FALSE}
 numericVars <- 
@@ -417,7 +477,7 @@ ggcorrplot(  #correlation plot
   colors = c("#25CB10", "white", "#FA7800"),
   type="lower",
   insig = "blank") +  
-    labs(title = "Correlation across numeric variables") 
+    labs(title = "Correlation Across Numeric Variables") 
 
 ```
 
@@ -428,7 +488,7 @@ ggcorrplot(  #correlation plot
 ```{r Corellation, cache = TRUE, message = FALSE, warning = FALSE，fig.height =8 , fig.width=10, fig.align='center'}
 
 st_drop_geometry(boulder.sf) %>% 
-  dplyr::select(price, TotalFinishedSF, park_nn3, school_nn3, stop.Buffer) %>%
+  dplyr::select(price, school_nn3, lake_nn3, playground_nn3, stop.Buffer) %>%
   #filter(SalePrice <= 1000000, Age < 500) %>% 
   gather(Variable, Value, -price) %>%  
    ggplot(aes(Value, price)) + # the x and y axes are 3 variables and sale price
@@ -437,11 +497,10 @@ st_drop_geometry(boulder.sf) %>%
      geom_smooth(method = "lm", se=F, colour = "#FA7800") + # geom_smooth is the best fit line (method is linear regression)
      facet_wrap(~Variable, ncol = 2, scales = "free") +
      labs(title = "Price as a Function of Selected Open Data") +
-     
      plotTheme()
 ```
 
-##Model Methodology 
+## Model Methodology 
 
 Our method of prediction is through Linear Regression, or Ordinary Least Squares (OLS) Regression. This method takes in several different variables that we choose and creates a linear model based on these components; this is also termed as a 'hedonic model.' The ultimate premise of the hedonic model is to identify which characteristics, both internal characteristics such as square footage and age and external characteristics such as nearby amenities, are the best predictors (have the greatest effect) on overall home prices. "Least Squares" refers to the slope of the line, which is calculated by minimizing the squared difference between the prediction and observed prices.
 
@@ -453,25 +512,21 @@ areaReg <- lm(price ~ TotalFinishedSF, data = boulder.sf)
 stargazer(areaReg, type="text")
 ```
 
-##Model Results
+## Model Results
 
 ```{r mutlivariate_regression, cache = TRUE, message = FALSE, warning = FALSE}
 # can play with categorical variables?
 reg1 <- lm(price ~ ., data = st_drop_geometry(boulder.sf) %>% 
-                             dplyr::select(price, Age, TotalFinishedSF, 
-                                    nbrBedRoom, designCodeDscr, qualityCodeDscr, ConstCodeDscr,
-                                    carStorageSF, Ac, Heating, Roof_Cover,
-                                    park_nn3, school_nn3, playground_nn3, lake_nn3, 
-                                    popDensity, pctWhite, pctBachelors))
-           
-reg1 %>% 
-  stargazer(type="text", median=TRUE, title="Results", align=TRUE)
-
+                             dplyr::select(price, Age, qualityCode, ConstCode, bsmtType, #designCode, 
+                                    carStorageSF, nbrBedRoom, TotalFinishedSF, mainfloorSF, Roof_Cover, #nbrRoomsNobath,
+                                    nbrFullBaths, parks.Buffer, #playground.Buffer, school.Buffer,
+                                    school_nn3, playground_nn1, lake_nn3, #park_nn3, 
+                                    popDensity, pctBachelors))
 ```
 
---Explain the training set being 75/25
+For testing the regression model, we broke the price data into a 75%/25% split, where we selected 75% of the data and used it to predict the values of the other 25%. The table for this "training" set is below:
 
-```{r baseline_regression}
+```{r baseline_regression, warning=FALSE}
 inTrain <- createDataPartition(
   y = paste(boulder.sf$Roof_Cover,
             boulder.sf$qualityCode, boulder.sf$Ac), 
@@ -485,11 +540,11 @@ boulder.test <- boulder.sf[-inTrain,]
 
 reg.training <- 
   lm(price ~ ., data = as.data.frame(boulder.training) %>% 
-       dplyr::select(price, Age, qualityCode, 
-                     carStorageSF, nbrBedRoom, TotalFinishedSF,
-                     park_nn3, school_nn3, playground_nn3, lake_nn3, 
-                     popDensity, pctWhite, pctBachelors))
-summary(reg.training)
+       dplyr::select(price, Age, qualityCode, ConstCode, bsmtType, #designCode, 
+                     carStorageSF, nbrBedRoom, TotalFinishedSF, mainfloorSF, #nbrRoomsNobath,
+                     nbrFullBaths, parks.Buffer, #playground.Buffer, school.Buffer,
+                     school_nn3, playground_nn1, lake_nn3, #park_nn3, 
+                     popDensity, pctBachelors))
 
 boulder.test <-
   boulder.test %>%
@@ -498,8 +553,33 @@ boulder.test <-
          price.Error = price.Predict - price,
          price.AbsError = abs(price.Predict - price),
          price.APE = (abs(price.Predict - price))/price.Predict)
-```
 
+table <- reg.training %>% 
+  stargazer(type="html", median=TRUE, title="Results", align=TRUE)
+
+```
+This table is a summary of the results from the training regression model; it is set up exactly the same way as the single variable model, just with more variables incorporated. Adding variables increased the R^2^ for this model up to the level where it is able to explain 62% of actual price values.
+
+**Cross Validation**
+```{r cross_validation, cache = TRUE, message = FALSE, warning = FALSE}
+fitControl <- trainControl(method = "cv", number = 100)
+set.seed(825)
+
+boulder_toPdt <- subset(boulder.sf, boulder.sf$toPredict==1)
+boulder_pdt <- subset(boulder.sf, boulder.sf$toPredict==0)
+
+reg1.cv <- 
+  train(price ~ ., data = st_drop_geometry(boulder_pdt) %>% 
+                                dplyr::select(price,Age, qualityCode, ConstCode, bsmtType, #designCode, 
+                                    carStorageSF, nbrBedRoom, TotalFinishedSF, mainfloorSF, Roof_Cover, #nbrRoomsNobath,
+                                    nbrFullBaths, parks.Buffer, #playground.Buffer, school.Buffer,
+                                    school_nn3, playground_nn1, lake_nn3, #park_nn3, 
+                                    popDensity, pctBachelors), 
+     method = "lm", trControl = fitControl, na.action = na.pass)
+
+reg1.cv
+
+```
 
 
 ```{r spatial_lag, cache = TRUE, message = FALSE, warning = FALSE}
@@ -579,7 +659,8 @@ st_drop_geometry(bothRegressions) %>%
   group_by(Regression, Variable) %>%
     summarize(meanValue = mean(Value, na.rm = T)) %>%
     spread(Variable, meanValue) %>%
-    kable()
+    kable() %>% 
+    kable_styling()
 ```
 
 ```{r spatial lag plot}
@@ -615,8 +696,8 @@ st_drop_geometry(bothRegressions) %>%
   left_join(tractsBC19, by = c("GEOID.x" = "GEOID")) %>%
     st_sf() %>%
     ggplot() + 
-      geom_scatter(aes(fill = mean.MAPE)) +
-      geom_point(data = bothRegressions, colour = "black", size = 0.25) +
+      geom_sf(aes(fill = mean.MAPE)) +
+      geom_sf(data = bothRegressions, colour = "black", size = .5) +
       facet_wrap(~Regression) +
       scale_fill_gradient(low = palette5[1], high = palette5[5],
                           name = "MAPE") +
