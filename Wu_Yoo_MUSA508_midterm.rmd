@@ -470,18 +470,18 @@ ggplot(as.data.frame(moranTest$res[c(1:999)]), aes(moranTest$res[c(1:999)])) +
 # https://www.bouldercounty.org/families/disease/covid-19-information/covid-19-vaccine-information/vaccine-data/
 left_join(
   st_drop_geometry(boulder.test) %>%
-    group_by(NAME.y) %>%
+    group_by(GEOID.x) %>%
     summarize(meanPrice = mean(price, na.rm = T)),
     mutate(boulder.test, predict.fe = 
-           predict(lm(price ~ NAME.y, data = boulder.test), 
+           predict(lm(price ~ GEOID.x, data = boulder.test), 
                    boulder.test)) %>%
     st_drop_geometry %>%
-    group_by(NAME.y) %>%
+    group_by(GEOID.x) %>%
     summarize(meanPrediction = mean(predict.fe))) %>%
     kable() %>% kable_styling()
 
 reg.nhood <- lm(price ~ ., data = as.data.frame(boulder.training) %>% 
-                  dplyr::select(NAME.y, price, Age, qualityCode, 
+                  dplyr::select(GEOID.x, price, Age, qualityCode, 
                      carStorageSF, nbrBedRoom, TotalFinishedSF,
                      park_nn3, school_nn3, playground_nn3, lake_nn3, 
                      popDensity, pctWhite, pctBachelors))
@@ -500,16 +500,69 @@ boulder.test.nhood <-
 ```{r accuracy_statistics, cache = TRUE, message = FALSE, warning = FALSE}
 bothRegressions <- 
   rbind(
-    dplyr::select(boulder.test, starts_with("price"), Regression, NAME.y) %>%
+    dplyr::select(boulder.test, starts_with("price"), Regression, GEOID.x) %>%
       mutate(lagPriceError = lag.listw(spatialWeights.test, price.Error)),
-    dplyr::select(boulder.test.nhood, starts_with("price"), Regression, NAME.y) %>%
+    dplyr::select(boulder.test.nhood, starts_with("price"), Regression, GEOID.x) %>%
       mutate(lagPriceError = lag.listw(spatialWeights.test, price.Error)))   
 
 st_drop_geometry(bothRegressions) %>%
-  gather(Variable, Value, -Regression, -NAME.y) %>%
+  gather(Variable, Value, -Regression, -GEOID.x) %>%
   filter(Variable == "price.AbsError" | Variable == "price.APE") %>%
   group_by(Regression, Variable) %>%
     summarize(meanValue = mean(Value, na.rm = T)) %>%
     spread(Variable, meanValue) %>%
     kable()
+```
+
+```{r accuracy_plot, cache = TRUE, message = FALSE, warning = FALSE, fig.height=4, fig.width=8}
+bothRegressions %>%
+  dplyr::select(price.Predict, price, Regression) %>%
+    ggplot(aes(price, price.Predict)) +
+  geom_point() +
+  stat_smooth(aes(price, price), 
+             method = "lm", se = FALSE, size = 1, colour="#FA7800") + 
+  stat_smooth(aes(price.Predict, price), 
+              method = "lm", se = FALSE, size = 1, colour="#25CB10") +
+  facet_wrap(~Regression) +
+  labs(title="Predicted sale price as a function of observed price",
+       subtitle="Orange line represents a perfect prediction; Green line represents prediction") +
+  plotTheme()
+```
+
+```{r mape_plot, cache = TRUE, message = FALSE, warning = FALSE, fig.height=4, fig.width=8}
+st_drop_geometry(bothRegressions) %>%
+  group_by(Regression, GEOID.x) %>%
+  summarize(mean.MAPE = mean(price.APE, na.rm = T)) %>%
+  ungroup() %>% 
+  left_join(tractsBC19, by = c("GEOID.x" = "GEOID")) %>%
+    st_sf() %>%
+    ggplot() + 
+      geom_sf(aes(fill = mean.MAPE)) +
+      geom_sf(data = bothRegressions, colour = "black", size = .5) +
+      facet_wrap(~Regression) +
+      scale_fill_gradient(low = palette5[1], high = palette5[5],
+                          name = "MAPE") +
+      labs(title = "Mean test set MAPE by neighborhood") +
+      mapTheme()
+```
+```{r context_map, cache = TRUE, message = FALSE, warning = FALSE, fig.height=4, fig.width=8}
+grid.arrange(ncol = 2,
+  ggplot() + geom_sf(data = na.omit(tractsBC19), aes(fill = raceContext)) +
+    scale_fill_manual(values = c("#25CB10", "#FA7800"), name="Race Context") +
+    labs(title = "Race Context") +
+    mapTheme() + theme(legend.position="bottom"), 
+  ggplot() + geom_sf(data = na.omit(tractsBC19), aes(fill = incomeContext)) +
+    scale_fill_manual(values = c("#25CB10", "#FA7800"), name="Income Context") +
+    labs(title = "Income Context") +
+    mapTheme() + theme(legend.position="bottom"))
+```
+
+```{r income_mape_table, cache = TRUE, message = FALSE, warning = FALSE}
+st_join(bothRegressions, tractsBC19) %>% 
+  filter(!is.na(incomeContext)) %>%
+  group_by(Regression, incomeContext) %>%
+  summarize(mean.MAPE = scales::percent(mean(price.APE, na.rm = T))) %>%
+  st_drop_geometry() %>%
+  spread(incomeContext, mean.MAPE) %>%
+  kable(caption = "Test set MAPE by neighborhood income context")
 ```
