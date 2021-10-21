@@ -1,0 +1,995 @@
+---
+title: "Zillow Model Update: Boulder County, CO"
+author: "Jasmine Siyu Wu & Zoe Yoo"
+date: "10/19/2021"
+output: 
+  html_document: 
+    toc: true
+    toc_float: true
+    code_folding: hide
+  ioslides_presentation:
+    self-included: true
+---
+
+[<img src="https://logos-world.net/wp-content/uploads/2020/11/Zillow-Logo.png" width=25% height=25%/>](Source: Logos World)
+
+<br />
+
+
+## 1. Introduction
+Through user feedback and data analysis, Zillow has found that their current predictions for homes in Boulder County, CO are unusually inaccurate compared to other areas and states. Compared to more traditional cities, Boulder and its surrounding area have unique characteristics; this contributes to a weaker relationship between selected variables used for countrywide analysis and housing prices. As such, our group has been tasked with incorporating additional cultural and physical factors of Boulder County into the model to increase its accuracy and reliability.
+
+<br />
+
+Though this model is centered around Boulder County, its enhancement is applicable to many other areas. Boulder, and Boulder County by extension, has a close proximity to many natural areas, in addition to a fairly new urban framework and low median age of existing buildings. These characteristics are similar to many, more recently established Western cities than those on the East Coast. Boulder County is still very dominantly white, with the Census estimating in 2019 that 77.4% of the county is white (non-Hispanic); it is also not densely populated, particularly in comparison to urban counties. Being a peri-urban center outside of Denver, Boulder is a useful area to improve our model for because many U.S. cities have similar ‘exterior’ cities of which property values have been understudied in the past, but are essential to the wider urban framework. 
+
+
+[<img src="http://aboutboulder.com/wp-content/uploads/2016/02/Screen-Shot-2016-02-02-at-9.14.24-PM.png" width=100% height=100%/>](Source: aboutboulder.com)
+
+Figure 1.1 Boulder County Map, *Source: BoulderCounty.org*
+
+<br />
+
+<br />
+
+
+
+```{r setup, include=TRUE, cache = FALSE, message = FALSE}
+knitr::opts_chunk$set(echo = TRUE,fig.width = 10, fig.height = 5)
+
+#Loading Libraries
+library(tidyverse)
+library(sf)
+library(spdep)
+library(caret)
+library(ckanr)
+library(FNN)
+library(grid)
+library(gridExtra)
+library(ggcorrplot)
+library(kableExtra)
+library(jtools)     # for regression model plots
+library(ggstance)
+library(osmdata)
+library(knitr)
+library(tidycensus)
+library(scales)
+library(stargazer)
+library(ggplot2)
+library(ggpubr)
+library(xtable)
+
+
+options(scipen=999) 
+options(tigris_class = "sf")
+options(tigris_use_cache = TRUE)
+
+# functions and data directory
+root.dir = "https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/DATA/"
+source("https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/functions.r")
+
+
+#Loading Styling Options
+mapTheme <- function(base_size = 12) {
+  theme(
+    text = element_text( color = "black"),
+    plot.title = element_text(size = 16,colour = "black"),
+    plot.subtitle=element_text(face="italic"),
+    plot.caption=element_text(hjust=0),
+    axis.ticks = element_blank(),
+    panel.background = element_blank(),axis.title = element_blank(),
+    axis.text = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(colour = "black", fill=NA, size=2),
+    strip.text.x = element_text(size = 14))
+}
+
+plotTheme <- function(base_size = 12) {
+  theme(
+    text = element_text( color = "black"),
+    plot.title = element_text(size = 16,colour = "black"),
+    plot.subtitle = element_text(face="italic"),
+    plot.caption = element_text(hjust=0),
+    axis.ticks = element_blank(),
+    panel.background = element_blank(),
+    panel.grid.major = element_line("grey80", size = 0.1),
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(colour = "black", fill=NA, size=2),
+    strip.background = element_rect(fill = "grey80", color = "white"),
+    strip.text = element_text(size=12),
+    axis.title = element_text(size=12),
+    axis.text = element_text(size=10),
+    plot.background = element_blank(),
+    legend.background = element_blank(),
+    legend.title = element_text(colour = "black", face = "italic"),
+    legend.text = element_text(colour = "black", face = "italic"),
+    strip.text.x = element_text(size = 14)
+  )
+}
+
+#Loading Quantile Break Functions
+qBr <- function(df, variable, rnd) {
+ if (missing(rnd)) {
+    as.character(quantile(round(df[[variable]],0),
+                 c(.01,.2,.4,.6,.8), na.rm=T))
+ } else if (rnd == FALSE | rnd == F) {
+    as.character(formatC(quantile(df[[variable]],
+                 c(.01,.2,.4,.6,.8), na.rm=T), digits = 3))
+ }
+}
+
+
+q5 <- function(variable) {as.factor(ntile(variable, 5))}
+
+#Loading Hexadecimal Color Palette
+palette5 <- c("#eff3ff", "#bdd7e7", "#6baed6", "#3182bd", "#08519c")
+```
+
+<br />
+
+
+## 2.  Data
+
+
+
+<br />
+
+### 2.1. Data Exploration
+
+The home price data our group used for training the model was released in 2021 by the Boulder County Assessor’s Office. The Boulder County Assessor’s Office distributes data relating to buildings, land, and permits, among others, but our base dataset was that of home sales between 2019-2021*source. As can be seen in the Figure 2.1 and 2.2 below, home prices are clearly not random, but tied to local geography.
+
+For our open data, we utilized both the [Boulder County OpenData Portal](https://www.bouldercounty.org/government/open-data/) and [OpenStreetMap](https://www.openstreetmap.org/about). OpenStreetMap is community-built, and was crucial for building our model due to their abundance of spatial information on amenities. We relied on Boulder County OpenData for our administrative boundaries, but they also have some data on amenities. 
+
+We also incorporated 2015-19 5-Year ASC data to enrich the model with socioeconomic characteristics, including population, income, and education. 
+
+```{r read_data, cache = TRUE, message = FALSE, warning = FALSE, results = FALSE}
+# read in boulder training data
+boulder.sf <- 
+  st_read("studentData.geojson", crs="ESRI:102254") %>%
+  st_transform('ESRI:102254') %>%  # "NAD_1983_HARN_StatePlane_Colorado_North_FIPS_0501"
+  st_make_valid() %>% 
+  mutate(Age = 2021 - builtYear,
+         PricePerSF = price/TotalFinishedSF)
+
+boulder.sf <- transform(boulder.sf, qualityCode = as.character(qualityCode), 
+                        bldgClass = as.character(bldgClass),
+                        ConstCode = as.character(ConstCode),
+                        Ac = as.character(Ac),
+                        Heating = as.character(Heating),
+                        ExtWallPrim = as.character(ExtWallPrim),
+                        ExtWallSec = as.character(ExtWallSec),
+                        IntWall = as.character(IntWall),
+                        Roof_Cover = as.character(Roof_Cover))
+
+
+boulder.sf[2638,]$price <- 315000 #mistake input as 31500000, checked on zillow
+
+
+# read in commissioner districts
+# data source: boulder county open data portal
+coms_dists.sf <-
+  st_read("https://opendata.arcgis.com/datasets/1fb6698cad044e3fb0471d1d464049ad_0.geojson") %>%
+  st_transform(st_crs(boulder.sf))
+
+coms_dists.sf <- transform(coms_dists.sf, DISTRICT = as.character(DISTRICT))
+
+# read in Boulder County municipities
+# data source: boulder county open data portal
+admin.sf <-
+  st_read("https://opendata.arcgis.com/datasets/9597d3916aba47e887ca563d5ac15938_0.geojson") %>%
+  st_transform(st_crs(boulder.sf)) %>% dplyr::select(ZONECLASS, ZONEDESC)
+
+#admin.unin <- st_combine(st_difference(county_boundary, admin.sf)) %>% mutate(ZONECLASS = "UNIN", ZONEDESC = "Unincorporated")  %>%  rename(geometry=x)
+
+
+# read in boulder county playgrounds (point)
+# data source: boulder county open data portal
+playgrounds.sf <- 
+  st_read("https://opendata.arcgis.com/datasets/b89ea27bc3cd492682503f03df1a9fb9_0.geojson") %>%
+  st_as_sf(coords=playgrounds.sf$geometry, crs = 4326) %>% 
+  st_transform(st_crs(boulder.sf)) 
+
+
+# read in schools in boulder county from open street map
+# data source: open street map
+schools <- osmdata_sf(getbb("Boulder County", base_url="https://nominatim.openstreetmap.org") %>% 
+                             opq() %>% 
+                             add_osm_feature("amenity", "school"))$osm_points
+
+schools.sf <- st_as_sf(schools, coords=schools$geometry, crs = 4326) %>% 
+  st_geometry(schools.sf$geometry) %>%
+  st_transform(st_crs(boulder.sf))  %>%
+  st_sf() %>%
+  cbind(., schools$name) %>%
+  rename(NAME = schools.name)
+
+
+# read in parks from open street map
+# data source: open street map
+parks <- osmdata_sf(getbb("Boulder County", base_url="https://nominatim.openstreetmap.org") %>% opq() %>%
+                      add_osm_feature(key = 'leisure', value = "park"))
+
+parks.sf <- st_geometry(parks$osm_polygons) %>%
+  st_transform(st_crs(boulder.sf)) %>%
+  st_sf() %>%
+  cbind(., parks$osm_polygons$name) %>%
+  rename(NAME = parks.osm_polygons.name)
+
+
+# read in transit stops
+# data source: open street map
+bus_stops <- osmdata_sf(getbb("Boulder County", base_url="https://nominatim.openstreetmap.org") %>% 
+                             opq() %>% 
+                             add_osm_feature("highway", "bus_stop"))$osm_points
+
+bus_stops.sf <- st_as_sf(bus_stops, coords=bus_stops$geometry, crs = 4326) %>% 
+  st_geometry(bus_stops.sf$geometry) %>%
+  st_transform(st_crs(boulder.sf)) %>%
+  st_sf() %>%
+  cbind(., bus_stops$name) %>%
+  rename(NAME = bus_stops.name)
+
+
+# read in lakes and reservoirs data
+# data source: boulder county open data portal
+lakes.sf <-
+  st_read("https://opendata.arcgis.com/datasets/e0759cd6dc8f4990a04b77a29c988b55_0.geojson") %>%
+  st_transform(st_crs(boulder.sf))
+
+
+# read in trailheads
+# data source: boulder county open data portal
+trailheads.sf <-
+  st_read("https://opendata.arcgis.com/datasets/3a950053bbef46c6a3c2abe3aceee3de_0.geojson") %>%
+  st_transform(st_crs(boulder.sf))
+
+# read in trailheads
+# data source: boulder county open data portal
+floodplain.sf <-
+  st_read("https://opendata.arcgis.com/datasets/f2b0b0d290894d3faafc6a5c7964445a_0.geojson") %>% 
+  st_transform(st_crs(boulder.sf))
+
+
+# read in mobile homes
+# data source: boulder county open data portal
+mobile_homes.sf <-
+  st_read("https://opendata.arcgis.com/datasets/8d53540bcc264bc3b13a500ab274bfa6_0.geojson") %>%
+  st_transform(st_crs(boulder.sf))
+
+
+# read acs variables
+acs_variable_list.2019 <- load_variables(2019, #year
+                                         "acs5", #five year ACS estimates
+                                         cache = TRUE)
+
+
+# read in boulder county boundary
+# data source: boulder county open data portal
+county_boundary <-
+  st_read("https://opendata.arcgis.com/datasets/964b8f3b3dbe401bb28d49ac93d29dc4_0.geojson") %>%
+  st_transform(st_crs(boulder.sf))
+
+
+# read in places (cities)
+# data source: ACS 2015-19 5yr
+places <- get_acs(geography = "place", 
+                    year = 2019,
+                    state = 08,
+                    variables = (TotalPop = 'B01001_001E'),
+                    survey = "acs5",
+                    output = "wide",
+                    geometry = TRUE) %>%
+  st_transform(st_crs(boulder.sf))
+
+# filter out cities in boulder county
+bc.places <-  
+  st_centroid(places)[county_boundary,] %>%
+  st_drop_geometry() %>%
+  left_join(places) %>%
+  st_sf() 
+
+
+# read in ACS 5yr 2015-19 estimates
+# variables: population density, poverty rate, median household income, white population percent, 
+tractsBC19 <- 
+  get_acs(geography = "tract", variables = c("B01001_001","B02001_002","B15001_050",
+                                             "B15001_009","B19013_001","B25058_001",
+                                             "B06012_002"), 
+          year=2019, state=08, county=013, geometry=T,output="wide") %>%
+  st_transform(st_crs(boulder.sf)) %>%
+  rename(TotalPop = B01001_001E, 
+         Whites = B02001_002E,
+         FemaleBachelors = B15001_050E, 
+         MaleBachelors = B15001_009E,
+         MedHHInc = B19013_001E, 
+         MedRent = B25058_001E,
+         TotalPoverty = B06012_002E) %>%
+  dplyr::select(-NAME, -starts_with("B")) %>%
+  mutate(pctWhite = ifelse(TotalPop > 0, Whites / TotalPop,0), # avoid of NAs
+         pctBachelors = ifelse(TotalPop > 0, ((FemaleBachelors + MaleBachelors) / TotalPop),0),
+         pctPoverty = ifelse(TotalPop > 0, TotalPoverty / TotalPop, 0), 
+         areaSqMi = as.numeric(st_area(.))*0.00000038610215855, 
+         popDensity = TotalPop/areaSqMi,
+         raceContext = ifelse(pctWhite > .5, "Majority White", "Majority Non-White"),
+         incomeContext = ifelse(MedHHInc > 83019, "High Income", "Low Income"),
+         year = "2019") %>%
+  dplyr::select(-Whites, -FemaleBachelors, -MaleBachelors, -TotalPoverty) 
+
+```
+
+
+```{r feature_engineering, cache = TRUE, message = FALSE, warning = FALSE}
+# number of features within 0.5 mile
+boulder.sf <- 
+  mutate(boulder.sf, 
+         playground.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 1609/2), playgrounds.sf))) %>% 
+  mutate(boulder.sf, 
+         school.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 1609/2), schools.sf))) %>%
+  mutate(boulder.sf, 
+         parks.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 1609/2), parks.sf)))  %>%
+  mutate(boulder.sf, 
+         parks.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 1609/2), mobile_homes.sf))) %>%
+  mutate(boulder.sf, 
+         busStop.Buffer=lengths(st_intersects(st_buffer(boulder.sf, 1609/2), bus_stops.sf)))
+
+
+# average nearest neighbor distance to 1-NN and 3-NN parks
+st_c <- st_coordinates #st_c(coordinates)
+
+boulder.sf <-
+  boulder.sf %>% 
+    mutate(park_nn1 = nn_function(st_c(boulder.sf), st_c(st_centroid(parks.sf)), 1)/1609,
+           park_nn3 = nn_function(st_c(boulder.sf), st_c(st_centroid(parks.sf)), 3)/1609) #in mile
+
+
+# average nearest neighbor distance to 1-NN and 3-NN schools
+boulder.sf <-
+  boulder.sf %>% 
+    mutate(school_nn1 = nn_function(st_c(boulder.sf), st_c(schools.sf), 1)/1609, 
+           school_nn3 = nn_function(st_c(boulder.sf), st_c(schools.sf), 3)/1609) # in mile
+
+
+# average nearest neighbor distance to 1-NN and 3-NN playgrounds
+boulder.sf <-
+  boulder.sf %>% 
+    mutate(playground_nn1 = nn_function(st_c(boulder.sf), st_c(playgrounds.sf), 1)/1609, 
+           playground_nn3 = nn_function(st_c(boulder.sf), st_c(playgrounds.sf), 3)/1609) # in mile
+
+
+# average nearest neighbor distance to 1-NN and 3-NN lakes
+boulder.sf <-
+  boulder.sf %>% 
+    mutate(lake_nn1 = nn_function(st_c(boulder.sf), st_c(st_centroid(lakes.sf)), 1)/1609, 
+           lake_nn3 = nn_function(st_c(boulder.sf), st_c(st_centroid(lakes.sf)), 3)/1609) # in mile
+
+
+# average nearest neighbor distance to 1-NN and 3-NN parks trail heads
+boulder.sf <-
+  boulder.sf %>% 
+    mutate(trailhd_nn1 = nn_function(st_c(boulder.sf), st_c(trailheads.sf), 1)/1609,
+           trailhd_nn3 = nn_function(st_c(boulder.sf), st_c(trailheads.sf), 3)/1609) #in mile
+
+
+# attach demographic and socioeconomic data to house points
+boulder.sf <- 
+  st_join(boulder.sf,
+          dplyr::select(tractsBC19, GEOID, MedRent, TotalPop, pctWhite, pctBachelors, pctPoverty, popDensity, raceContext, incomeContext))
+
+boulder.sf <- 
+  st_join(boulder.sf,
+          dplyr::select(admin.sf, ZONECLASS, ZONEDESC)) %>% mutate(ZONEDESC = replace_na(ZONEDESC, "Unincorporated"),
+         ZONECLASS = replace_na(ZONECLASS, "UNIN"))
+
+boulder.sf <- 
+  st_join(boulder.sf,
+          dplyr::select(coms_dists.sf, DISTRICT, Representative)) 
+
+```
+
+
+```{r price_map, cache = TRUE, message = FALSE, warning = FALSE}
+# visualize raw data
+
+ggplot() +
+    geom_sf(data=tractsBC19, show.legend = NA, color='grey', lwd=0.1, alpha=.4)+
+    #geom_sf(data=bc.places, show.legend = NA, color='grey', lwd=0.1)+
+    geom_sf(data=county_boundary, show.legend = NA, fill = "transparent", lwd=0.8)+
+    geom_sf(data = boulder.sf, aes(color = q5(price)), 
+            show.legend = "point", size = 0.3)+
+    scale_color_brewer(type=seq, palette = "YlOrRd", labels=qBr(boulder.sf,"price"),
+                      name="Quintile\nBreaks")+
+    labs(title="Home Sale Price",
+         subtitle="Boulder County, CO", 
+         caption="Figure 2.1") +
+    mapTheme()
+
+ggplot() +
+    geom_sf(data=tractsBC19, show.legend = NA, color='grey', lwd=0.1, alpha=.4)+
+    #geom_sf(data=bc.places, show.legend = NA, color='grey', lwd=0.1)+
+    geom_sf(data=county_boundary, show.legend = NA, fill = "transparent", lwd=0.8)+
+    geom_sf(data = boulder.sf, aes(colour = q5(PricePerSF)), 
+            show.legend = "point", size = 0.3) +
+    scale_color_brewer(type=seq, palette = "YlOrRd", labels=qBr(boulder.sf,"PricePerSF"),
+                      name="Quintile\nBreaks") +
+    labs(title="Price Per Square Foot", 
+         subtitle="Boulder County, CO", 
+         caption="Figure 2.2") +
+    mapTheme()
+```
+
+<br />
+
+### 2.2. Data Visualization
+
+
+Because sale price is so intricately tied to spatial structure, examining spatially related factors was a central part of our work on this model. Much of home price prediction is based on internal characteristics, such as total square footage, age, type of home, and the presence of central heating/air conditioning. Outside of basic home characteristics, our group searched out and vetted local characteristics that might have correlations to home price. For example, we examined factors like neighborhood, proximity to schools/location in highly-rated school districts, proximity to floodplains or water, presence of amenities like parks or trails, and proximity to highways. Though crime is also an important correlator to home price, crime data was not publicly available at a specific enough level to be integrated into the prediction model. 
+
+The maps below (Figure 2.3-5) illustrate a few of these variables, as it is much easier to understand visually how these factors might contribute to the clustering of home pricing. Home age and design type, both internal characteristics, cluster more in more densely populated areas and less so in rural areas. Similarly, concentration of bus stops, one of our external characteristics originally pulled from OpenStreetMap's records, is at its height in the city of Boulder. 
+
+```{r variable_maps, cache = TRUE, message = FALSE, warning = FALSE, fig.align = 'left'}
+#map 1: 
+ggplot() +
+  geom_sf(data=tractsBC19, show.legend = NA, color='grey', lwd=0.1, alpha=.4)+
+  geom_sf(data=county_boundary, show.legend = NA, fill = "transparent", lwd=0.8)+
+  geom_sf(data = boulder.sf, aes(color = q5(Age)), 
+          show.legend = "point", size = 0.3)+
+  scale_color_brewer(type=seq, palette = "Purples", name="Quintile\nBreaks",
+                     labels=qBr(boulder.sf,"Age"))+
+  labs(title="Home Age", 
+       subtitle="Boulder County, CO", 
+       caption="Figure 2.3") +
+  mapTheme()
+
+#map 2: 
+ggplot() +
+  geom_sf(data=tractsBC19, show.legend = NA, color='grey', lwd=0.1, alpha=.4)+
+  geom_sf(data=county_boundary, show.legend = NA, fill = "transparent", lwd=0.8)+
+  geom_sf(data = boulder.sf, aes(color = designCodeDscr), 
+          show.legend = "point", size = 0.3)+
+  scale_color_brewer(type=seq, palette = "Set1", name="Design Code",
+                     labels=c("1 Store-Ranch", "2-3 Story", "Bi-level", "Townhouse", "Split-level"))+
+  labs(title="Design Type of Homes", 
+       subtitle="Boulder County, CO", 
+       caption="Figure 2.4") +
+  mapTheme()
+
+#map 3: 
+ggplot() +
+  geom_sf(data=tractsBC19, show.legend = NA, color='grey', lwd=0.1, alpha=.4)+
+  geom_sf(data=county_boundary, show.legend = NA, fill = "transparent", lwd=0.8)+
+  geom_sf(data = boulder.sf, aes(color = busStop.Buffer), 
+          show.legend = "point", size = 0.3)+
+  scale_color_gradientn(colors=c("#c6dbef", "#4292c6", "#2171b5", "#08519c", "#08306b"), name="Count", breaks=c(1, 5, 10, 40, 60)) +
+  #guides(fill=guide_colourbar(barheight = "200%")) +
+  labs(title="Bus Stops within Half A Mile", 
+       subtitle="Boulder County, CO", 
+       caption="Figure 2.5") +
+  mapTheme()
+```
+
+<br />
+
+### 2.3. Finding Correlation
+
+
+```{r vars_summary, include=TRUE, cache = FALSE, message = FALSE, warning = FALSE, results="asis"}
+#stargazer(st_drop_geometry(boulder.sf), type="text", title="Numeric Internal Characteristics", single.row=TRUE)
+
+boulder.sf %>% 
+  st_drop_geometry() %>% 
+  select(price, builtYear, bsmtSF, carStorageSF, nbrBedRoom, nbrRoomsNobath, 
+         mainfloorSF, nbrThreeQtrBaths, nbrFullBaths, nbrHalfBaths,
+         TotalFinishedSF, Age, PricePerSF) %>%
+  stargazer(type="html", title="Table 2.1 Numeric Internal Characteristics", single.row=TRUE, digits=2,
+            covariate.labels = c("Price",
+                                "Year Built",
+                                "Basement SqFt",
+                                "Car Storage SqFt",
+                                "# Bedrooms",
+                                "# Rooms (Not Including Bathrooms)",
+                                "Main Floor SqFt",
+                                "# 3/4 Bathrooms",
+                                "# Full Bathrooms",
+                                "# 1/2 Bathrooms",
+                                "Total Finished SqFt",
+                                "Age",
+                                "Price per SqFt")) 
+
+
+
+boulder.sf %>% 
+  st_drop_geometry() %>% 
+  select(price, busStop.Buffer, park_nn1, park_nn3, parks.Buffer, school_nn1, school_nn3,
+         school.Buffer, playground_nn1, playground_nn3, playground.Buffer, 
+         lake_nn1, lake_nn3, trailhd_nn1, trailhd_nn3) %>%
+  stargazer(type="html", title="Table 2.2 External Characteristics/Amenities", single.row=TRUE,digits=2,
+            covariate.labels = c("Price", "Bus Stop (1/2 mile Buffer)",
+                                "Parks (1 Nearest Neighbor)",
+                                "Parks (3 Nearest Neighbors)",
+                                "Parks (1/2 mile Buffer)",
+                                "Schools (1 Nearest Neighbor)",
+                                "Schools (3 Nearest Neighbors)",
+                                "Schools (1/2 mile Buffer)",
+                                "Playgrounds (1 Nearest Neighbor)",
+                                "Playgrounds (3 Nearest Neighbors)",
+                                "Playgrounds (1/2 mile Buffer)",
+                                "Lakes (1 Nearest Neighbor)",
+                                "Lakes (3 Nearest Neighbors)",
+                                "Trail Heads (1 Nearest Neighbor)",
+                                "Trail Heads (3 Nearest Neighbors)"))
+
+boulder.sf %>% 
+  st_drop_geometry() %>% 
+  select(price, designCodeDscr, qualityCodeDscr, bldgClassDscr,
+         ConstCodeDscr, carStorageTypeDscr, AcDscr, HeatingDscr,
+         bsmtTypeDscr, ExtWallDscrPrim, IntWallDscr, Roof_CoverDscr) %>% 
+  head(20) %>% 
+  kable(align='c', caption="Table 2.3 Categorical Internal Characteristics",
+        col.names = c("Price", "Design Code",
+                      "Quality Code",
+                      "Building Class",
+                      "Construction Code",
+                      "Car Storage",
+                      "Air Conditioning Type",
+                      "Heating Type",
+                      "Basement Type",
+                      "Exterior Wall Material",
+                      "Internal Wall Material",
+                      "Roof Material")) %>%
+  kable_styling() %>%
+  scroll_box(width = "100%", height = "300px")
+
+```
+
+<br />
+
+Above, we have included several summary tables of the variables we considered, separated by type. Numeric internal characteristics and categorical are separated to describe them more accurately. The categorical internal characteristics are not summarized, but merely show the first few entries to give an idea of what the categories include; for example, under heating, we can see that there is variation between hot water and forced air. External characteristics include both "nearest neighbor" calculations of the average distance (in miles) from each home and the nearest specified number of amenities, and "buffer" calculations of how many amenities are within a half-mile radius. Lastly included is a simple table of examples of the spatial contexts available for use; census tracts are more akin to neighborhoods, while municipalities (including unincorporated areas) give a more general idea of price clustering.
+
+The problem with looking at all variables at once is that of multicollinearity, or the presence of variables that are highly related; a good example of this is number of bedrooms and number of rooms overall, which are both closely tied to home price but also correlated with each other. Thus, we did not use all of the shown above for our predictive model, but had to decide which were the most applicable; among other tools, we used a correlation matrix (Figure 2.6) to quickly see where there might be correlation between numeric variables.
+
+
+```{r correlation_matrix, fig.height=10, fig.width=10, cache = TRUE, message = FALSE, warning = FALSE}
+numericVars <- 
+  select_if(st_drop_geometry(boulder.sf), is.numeric) %>% 
+  dplyr::select(-MUSA_ID, -toPredict, -builtYear, -Stories, -UnitCount, -PricePerSF, -year,
+                -playground_nn1, -park_nn1, -school_nn1, -lake_nn1, -bld_num, -section_num, -EffectiveYear,
+                -CompCode) %>% 
+  na.omit() 
+
+
+# only for continuous variables
+ggcorrplot(  #correlation plot
+  round(cor(numericVars), 1), 
+  p.mat = cor_pmat(numericVars),
+  show.diag = TRUE,
+  colors = c("#08519c", "white", "#FA342A"),
+  type="lower",
+  insig = "blank") +  
+    labs(title = "Correlation Across Numeric Variables", caption="Figure 2.6") 
+
+```
+
+In the scatter plots (Figure 2.7) below, we compare price as a function of these data. We plotted these variables in particular because of their **relatively strong correlations** with price (see Figure 2.6 above), which can be examined in more detail through scatter plots. As the plots show, the number of bus stops within a half mile tends to have a positive relationship with house price, while the rest average K-NN distances tend to have negative relationships with house price. That is, the more bus stops a house is closed to, the higher price it tends to have. Also, the higher distances to lakes, playgrounds, and trailheads that a house have, the lower price it tends to have.
+
+
+```{r Correlation, cache = TRUE, message = FALSE, warning = FALSE，fig.height =8 , fig.width=10, fig.align='center'}
+st_drop_geometry(boulder.sf) %>% 
+  dplyr::select(price, trailhd_nn3, lake_nn3, playground_nn3, busStop.Buffer) %>%
+  #filter(SalePrice <= 1000000, Age < 500) %>% 
+  gather(Variable, Value, -price) %>%  
+   ggplot(aes(Value, price)) + # the x and y axes are 3 variables and sale price
+   scale_y_continuous(breaks=c(2000000,4000000,6000000), labels=c("$2,000,000","$4,000,000","$6,000,000"))+
+     geom_point(size = .5) + 
+     geom_smooth(method = "lm", se=F, colour = "#FA342A") + # geom_smooth is the best fit line (method is linear regression)
+     facet_wrap(~Variable, ncol = 2, scales = "free") +
+     labs(title = "Price as a Function of Selected Open Data", caption="Figure 2.7") +
+     plotTheme()
+
+```
+
+
+<br />
+
+<br />
+
+## 3. Methods
+
+Our method of prediction is through Linear Regression, or Ordinary Least Squares (OLS) Regression. This method takes in several different variables that we choose and creates a linear model based on these components; this framework is also termed as a 'hedonic model.' The ultimate premise of the hedonic model is to identify which characteristics, both internal characteristics such as square footage and age and external characteristics such as nearby amenities, are the best predictors (have the greatest effect) on overall home prices. "Least Squares" refers to the slope of the line, which is calculated by minimizing the squared difference between the prediction and observed prices.
+
+Linear regression can be done with just one variable, which we have shown below in the case of `TotalFinishedSF`, or total finished square footage. The main values we considered are residual standard error, R^2^, and p-value. Residual standard is the error of the coefficient, which helps us understand how reliable the coefficient is. The p-value tells us whether the variable is a useful predictor, and R^2^ is a percentage 'goodness of fit' indicator. Here, since the model of `TotalFinishedSF` has an R^2^ of 0.25, about 25% of home price variation can be explained by this simple regression of `TotalFinishedSF`. By incorporating more variables into our model, we can better explain home price variation.
+
+
+```{r simple_reg, cache = TRUE, message = FALSE, warning = FALSE, results="asis"}
+areaReg <- lm(price ~ TotalFinishedSF, data = boulder.sf)
+stargazer(areaReg, type="html", star.cutoffs = c(0.05, 0.01, 0.001),
+          single.row=TRUE, digits=2, title="Table 3.1 Simple Regression of Area and Price")
+```
+
+<br />
+
+<br />
+
+
+## 4. Results
+
+
+For testing the regression model, we broke the price data into a 75%/25% split, where we selected 75% of the data and used it to predict the values of the other 25%. 
+
+<br />
+
+### 4.1. Baseline Regression
+
+A baseline regression is built with multiple variables, including price, house age, quality, construction, basement type, car storage area, number of bedroom, total finished area, main floor area, nnumber of full baths, parks within a half mile, distance to 3-NN schools, distance to 3-NN playgrounds, distance to 3-NN lakes, distance to 3-NN trailheads, pop density, and local percentage of bachelors. 
+
+```{r baseline_regression, cache = TRUE, message = FALSE, warning = FALSE, results="asis"}
+boulder_toPdt <- subset(boulder.sf, boulder.sf$toPredict==1)
+boulder_pdt <- subset(boulder.sf, boulder.sf$toPredict==0)
+
+
+inTrain <- createDataPartition(
+  y = paste(boulder_pdt$ConstCode, boulder_pdt$GEOID,
+            boulder_pdt$qualityCode, boulder_pdt$Ac, boulder_pdt$bsmtType), 
+  p = .75, list = FALSE) #%>%
+#  append(which(boulder_pdt$qualityCode == "10")) %>%
+#  append(which(boulder_pdt$GEOID == "08013012300")) %>%
+#  append(which(boulder_pdt$ConstCode == "410")) %>%
+#  append(which(boulder_pdt$bsmtType == "LWU"))
+
+boulder.training <- boulder_pdt[inTrain,]
+boulder.test <- boulder_pdt[-inTrain,]
+
+
+reg.training <- 
+  lm(price ~ ., data = as.data.frame(boulder.training) %>% 
+       dplyr::select(price, Age, qualityCode,  ConstCode, bsmtType, #designCode, 
+                     carStorageSF, nbrBedRoom, TotalFinishedSF, mainfloorSF,#nbrRoomsNobath,
+                     nbrFullBaths, parks.Buffer, #playground.Buffer, school.Buffer,
+                     school_nn3, playground_nn3, lake_nn3, trailhd_nn3, 
+                     popDensity, pctBachelors))
+
+stargazer(reg.training, type="html", star.cutoffs = c(0.05, 0.01, 0.001), 
+          median=TRUE, title="Table 4.1 Training Set Baseline Regression Results", align=TRUE,
+          single.row=TRUE, digits=2, omit = c("Age", "qualityCode", "ConstCode", "bsmtType",
+                                              "carStorageSF", "nbrBedRoom", "TotalFinishedSF", "mainfloorSF",
+                                               "nbrFullBaths", "parks.Buffer", 
+                                               "school_nn3", "playground_nn3", "lake_nn3", "trailhd_nn3", 
+                                               "popDensity", "pctBachelors"))
+
+
+summary(reg.training) %>% 
+  xtable() %>%
+  kable(align='c', caption="Variables in Training Set Baseline Regression",
+        digits=2) %>%
+  kable_styling() %>%
+  scroll_box(width = "100%", height = "300px")
+
+
+```
+
+<br />
+
+This table is a summary of the results from the training regression model; it is set up exactly the same way as the single regression model, just with more variables incorporated. Adding variables increased the R^2^ for this model up to the level where it is able to explain 61% of variations in actual prices.
+
+<br />
+
+**Mean Absolute Error (MAE) and Mean Absolute Percentage Error (MAPE) for the test set** show that our baseline regression predict house prices off the observed prices about $142,100 and 23.8% of the observed prices on average.
+
+```{r test set MAE MAPE, cache = TRUE, message = FALSE, warning = FALSE}
+
+boulder.test <-
+  boulder.test %>%
+  mutate(Regression = "Baseline Regression",
+         price.Predict = predict(reg.training, boulder.test),
+         price.Error = price.Predict - price,
+         price.AbsError = abs(price.Predict - price),
+         price.APE = (abs(price.Predict - price))/price.Predict)
+
+
+st_drop_geometry(boulder.test) %>%
+  group_by(Regression) %>%
+    summarize(MAE = mean(price.AbsError, na.rm = T),
+              MAPE = mean(price.APE, na.rm = T)) %>%
+    kable() %>% kable_styling()
+
+```
+
+<br />
+
+In Figure 4.1, predicted prices by the Baseline Regression are plotted as a function of observed prices in the test set. Although the baseline model is fairly accurate for the majority of points, there is spread and numerous outliers that make accurate predictions for all homes difficult. 
+
+```{r predicted vs observed price, cache = TRUE, message = FALSE, warning = FALSE}
+
+st_drop_geometry(boulder.test) %>%
+  ggplot(aes(price.Predict, price), na.rm=TRUE) +
+     geom_point(size = .5) + geom_smooth(method = "lm", se=F, colour = "#FA342A") +
+     labs(title = "Predicted Prices as a function of Observed Prices",
+          x = "Predicted Price", y = "Observed Price",
+          caption="Figure 4.1") +
+     plotTheme()
+
+```
+
+
+
+```{r predict_price_map, cache = TRUE, message = FALSE, warning = FALSE}
+# visualize raw data
+boulder.sf <-
+  boulder.sf %>%
+  mutate(Regression = "Baseline Regression",
+         price.Predict = predict(reg.training, boulder.sf))
+
+
+ggplot() +
+    geom_sf(data=tractsBC19, show.legend = NA, color='grey', lwd=0.1, alpha=.4)+
+    #geom_sf(data=bc.places, show.legend = NA, color='grey', lwd=0.1)+
+    geom_sf(data=county_boundary, show.legend = NA, fill = "transparent", lwd=0.8)+
+    geom_sf(data = boulder.sf, aes(color = q5(price.Predict)), 
+            show.legend = "point", size = 0.3)+
+    scale_color_brewer(type=seq, palette = "YlOrRd", labels=qBr(boulder.sf,"price.Predict"),
+                      name="Quintile\nBreaks")+
+    labs(title="Predicted Prices for All Homes",
+         subtitle="Boulder County, CO", 
+         caption="Figure 4.2") +
+    mapTheme()
+```
+
+<br />
+
+**Cross Validation**
+
+Through a cross-validation process of folding our data 100 times, we found that our training model was able to explain about 65% of home prices in Boulder County, as the initial results shown below. The histogram of Mean Absolute Error (MAE) (Figure 4.3) gives us a better idea of the spread of our absolute error, which looks to be clustered mostly between errors of $175,000-$225,000 off of the actual sale price.
+
+```{r cross_validation, cache = TRUE, message = FALSE, warning = FALSE}
+fitControl <- trainControl(method = "cv", number = 100)
+set.seed(825)
+
+
+reg.training.cv <- 
+  train(price ~ ., data = st_drop_geometry(boulder.training) %>% 
+                                dplyr::select(price, Age, qualityCode, ConstCode, bsmtType, #designCode, 
+                                               carStorageSF, nbrBedRoom, TotalFinishedSF, mainfloorSF, Roof_Cover, #nbrRoomsNobath,
+                                               nbrFullBaths, parks.Buffer, #playground.Buffer, school.Buffer,
+                                               school_nn3, playground_nn3, lake_nn3, trailhd_nn3, 
+                                               popDensity, pctBachelors), 
+     method = "lm", trControl = fitControl, na.action = na.pass)
+
+
+reg.training.cv
+```
+
+<br />
+
+
+```{r hist_MAE, cache = TRUE, message = FALSE, warning = FALSE}
+
+ggplot(data=reg.training.cv$resample, aes(reg.training.cv$resample$MAE)) + 
+  geom_histogram(color="#08519c", fill="#08519c", alpha=0.8, bins=50) +
+  labs(title = "Distribution of Mean Absolute Error: Baseline Regression",
+       subtitle = "k-fold cross validation; k=100",
+       x = "Mean Absolute Error", y = "Count",
+       caption="Figure 4.3") +
+  plotTheme()
+
+# subtitle = "k-fold cross validation; k=100",
+```
+
+<br />
+
+
+```{r spatial_lag, cache = TRUE, message = FALSE, warning = FALSE}
+
+coords <- st_coordinates(boulder.sf) 
+neighborList <- knn2nb(knearneigh(coords, 5))
+spatialWeights <- nb2listw(neighborList, style="W")
+boulder.sf <- mutate(boulder.sf, lagPrice=lag.listw(spatialWeights, boulder.sf$price, zero.policy=TRUE, NAOK = TRUE)) 
+
+
+coords.test <-  st_coordinates(boulder.test) 
+neighborList.test <- knn2nb(knearneigh(coords.test, 5))
+spatialWeights.test <- nb2listw(neighborList.test, style="W")
+boulder.test <- 
+  mutate(boulder.test, 
+         lagPrice = lag.listw(spatialWeights.test, boulder.test$price, zero.policy=TRUE, NAOK = TRUE),
+         lagPriceError = lag.listw(spatialWeights.test, boulder.test$price.Error, zero.policy=TRUE, NAOK = TRUE))
+```
+
+<br />
+
+**Moran's I**, which is plotted in Figure 4.4, is a way for us to evaluate whether spatial autocorrelation, or clustering, is a factor that affects the error in our model. Moran's I is a statistic measured between -1 and 1, where -1 indicates data that exhibits perfect spatial dispersion, 0 is random dispersion, and 1 indicates completely clustered data. In Figure 4.3, the frequency of all 999 randomly permuted I are plotted as a histogram with the Observed I indicated by the orange line. The histogram of permuted values below is based off of data with random dispersion, which gives a permuted Moran's I right around zero. As the observed Moran's I is higher than zero, in this case about 0.25, it indicates that we have some spatial clustering in our errors, and thus may need to incorporate factors that account for that (like neighborhoods) into our predictive model.
+
+```{r moransI, cache = TRUE, message = FALSE, warning = FALSE}
+moranTest <- moran.mc(boulder.test$price.Error, 
+                      spatialWeights.test, nsim = 999)
+
+ggplot(as.data.frame(moranTest$res[c(1:999)]), aes(moranTest$res[c(1:999)])) +
+  geom_histogram(binwidth = 0.01) +
+  geom_vline(aes(xintercept = moranTest$statistic), colour = "#FA342A",size=1) +
+  scale_x_continuous(limits = c(-1, 1)) +
+  labs(title="Observed and permuted Moran's I",
+       subtitle= "Observed Moran's I in orange",
+       x="Moran's I",
+       y="Count",
+       caption="Figure 4.4") +
+  plotTheme()
+```
+
+
+<br />
+
+Plotting spatial lag of errors is another way to evaluate clustering of errors. Figure 4.5 shows that as home price errors increase, so does nearby home price errors. This reconfirms the spatial correlation of price errors in the baseline regression, suggesting an introduction of neighborhoods into the model.
+
+```{r spatial lag of errors, cache = TRUE, message = FALSE, warning = FALSE}
+
+
+st_drop_geometry(boulder.test) %>%
+  ggplot(aes(lagPriceError, price.Error), na.rm=TRUE) +
+     geom_point(size = .5) + geom_smooth(method = "lm", se=F, colour = "#08519c") +
+     labs(title = "Price Error as a function of the Spatial Lag of Price Errors",
+          caption="Figure 4.5",
+          x="Spatial Lag of Price Errors (Mean Error of 5 Nearest Neighbors)",
+          y="Price Error") +
+     plotTheme()
+
+```
+
+<br />
+
+### 4.2. Neighborhood Model
+
+One of the most effective ways to make a house pricing model more accurate, especially with our model's existence of spatial autocorrelation, is to incorporate local neighborhoods into it. Neighborhood boundaries are vacuous and change regularly but are still incredibly useful for predicting price variation within cities in particular, as many people will consider what neighborhood their home is in as a way to gauge safety and local culture, among other factors. With Boulder County, this was more difficult, as likely since much of Boulder is rural, the county does not record official neighborhood boundaries; to circumvent this, we integrated census tracts into our model instead. In the city of Boulder, census tracts are fairly well aligned with neighborhoods; outside of the city, the tracts are larger and encompass larger areas, but we still refer to this as 'neighborhood regression.'
+
+```{r neighborhood_model, cache = TRUE, message = FALSE, warning = FALSE, results="asis"}
+# no neighbohood so that usually using census tract
+# https://www.bouldercounty.org/families/disease/covid-19-information/covid-19-vaccine-information/vaccine-data/
+#left_join(
+#  st_drop_geometry(boulder.test) %>%
+#    group_by(GEOID) %>%
+#    summarize(meanPrice = mean(price, na.rm = T)),
+#  mutate(boulder.test, predict.fe = predict(lm(price ~ GEOID, data = boulder.test), boulder.test)) %>%
+#    st_drop_geometry %>%
+#    group_by(GEOID) %>%
+#      summarize(meanPrediction = mean(predict.fe))) %>%
+#      kable() %>% kable_styling()
+
+reg.nhood <- lm(price ~ ., data = as.data.frame(boulder.training) %>% 
+                                  dplyr::select(GEOID, price, Age, qualityCode, ConstCode, bsmtType, #designCode, 
+                                                carStorageSF, nbrBedRoom, TotalFinishedSF, mainfloorSF, Roof_Cover, #nbrRoomsNobath,
+                                                nbrFullBaths, parks.Buffer, #playground.Buffer, school.Buffer,
+                                                school_nn3, playground_nn3, lake_nn3, trailhd_nn3, 
+                                                popDensity, pctBachelors))
+
+
+stargazer(reg.training, type="html", star.cutoffs = c(0.05, 0.01, 0.001), 
+          median=TRUE, title="Table 4.2 Neighborhood Regression Results of Training Set", align=TRUE,
+          single.row=TRUE, digits=2, omit = c("Age", "GEOID", "qualityCode", "ConstCode", "bsmtType",
+                                              "carStorageSF", "nbrBedRoom", "TotalFinishedSF", "mainfloorSF", "Roof_Cover", 
+                                                "nbrFullBaths", "parks.Buffer",
+                                                "school_nn3", "playground_nn3", "lake_nn3", "trailhd_nn3", 
+                                                "popDensity", "pctBachelors"))
+
+
+summary(reg.nhood) %>% 
+  xtable() %>%
+  kable(align='c', caption="Variables in Training Set Neighborhood Regression", 
+        digits=2) %>%
+  kable_styling() %>%
+  scroll_box(width = "100%", height = "300px")
+
+```
+
+<br />
+
+As can be seen in the Table 4.2, the R^2^ is significantly improved by just adding tracts, up to a value of 0.73. As well as the R^2^ value, the mean absolute percentage error (MAPE) has been reduced, and especially improved over spatial context, as shown in Figure 4.6 below. Though there are still a couple of outliers, most points are much more tightly clustered.
+
+```{r mape_plot, cache = TRUE, message = FALSE, warning = FALSE}
+boulder.test.nhood <-
+  boulder.test %>%
+  mutate(Regression = "Neighborhood Effects",
+         price.Predict = predict(reg.nhood, boulder.test),
+         price.Error = price.Predict- price,
+         price.AbsError = abs(price.Predict- price),
+         price.APE = (abs(price.Predict- price)) / price)
+
+
+bothRegressions <- 
+  rbind(
+    dplyr::select(boulder.test, starts_with("price"), Regression, GEOID),
+    dplyr::select(boulder.test.nhood, starts_with("price"), Regression, GEOID)) 
+
+
+st_drop_geometry(bothRegressions) %>%
+  group_by(Regression, GEOID) %>%
+  summarize(mean.MAPE = mean(price.APE, na.rm = T)) %>%
+  ungroup() %>% 
+  left_join(tractsBC19) %>%
+    st_sf() %>%
+    ggplot() + 
+      geom_sf(aes(fill = mean.MAPE)) +
+      geom_sf(data = bothRegressions, colour = "black", size = .5) +
+      facet_wrap(~Regression) +
+      scale_fill_gradient(low = palette5[1], high = palette5[5],
+                          name = "MAPE") +
+      labs(title = "Test Set MAPE by Neighborhood",
+           subtitle="Boulder County, CO", 
+           caption="Figure 4.6") +
+      mapTheme()
+```
+
+<br />
+
+As Figure 4.7 shows, most neighborhood MAPEs are below 0.5 and only a few neighborhoods have MAPEs higher than 0.5, drawing attentions that the neighborhood model doesn't work well for these neighborhoods. Meanwhile, there is no strong relationship between MAPE and mean price by neighborhood.
+
+```{r accuracy_plot, cache = TRUE, message = FALSE, warning = FALSE}
+st_drop_geometry(bothRegressions) %>%
+  gather(Variable, Value, -Regression, -GEOID) %>%
+  filter(Variable == "price.APE" | Variable == "price") %>%
+  group_by(GEOID, Variable) %>%
+    summarize(meanValue = mean(Value, na.rm = T)) %>%
+    spread(Variable, meanValue) %>%
+    ggplot(aes(price.APE, price), na.rm=TRUE) +
+     geom_point(size = 2, color="#08519c") + 
+     #geom_smooth(method = "lm", se=F, colour = "#FA7800") +
+     labs(title = "Mean Absolute Percentage Error (MAPE) as a function of Price",
+          caption="Figure 4.7",
+          x="MAPE by Neighborhood",
+          y="Mean Price by Neighborhood") +
+     plotTheme()
+
+
+```
+
+<br />
+
+**Generalizability by Group**
+
+To examine the type of clustering in our model, we compare the MAPE of "High" and "Low" household incomes by tract to Boulder County's median of $83,019, measuring above and below respectively (see Figure 4.8). Though the median income in Boulder County is higher than that of the United States, using the county median income is more relevant for local comparison. Compared to the map of MAPE by neighborhood in Figure 4.6, there is mostly no clear relationship in our model between income and percentage error. The only possible correlation is in a couple of Boulder City tracts, which are lower-income and have a slightly lower MAPE than most of Boulder County; however, it is minimal. Table 4.3 echoes this, showing the difference between MAPE in low- and high-income areas is only about 2-3%. Avoiding error cluster by income is important because over- or under-estimating prices corresponding to spatial context can, if too dramatic, have effects on local areas.
+
+```{r context_map, cache = TRUE, message = FALSE, warning = FALSE}
+
+  ggplot() + geom_sf(data = na.omit(tractsBC19), aes(fill = incomeContext)) +
+    scale_fill_manual(values = c("#eff3ff", "#08519c"), name="Income Context") +
+    labs(title = "Income Context",
+         subtitle="Boulder County, CO", 
+         caption="Figure 4.8") +
+    mapTheme()
+
+```
+
+```{r income_mape_table, cache = TRUE, message = FALSE, warning = FALSE}
+st_join(bothRegressions, tractsBC19) %>% 
+  filter(!is.na(incomeContext)) %>%
+  group_by(Regression, incomeContext) %>%
+  summarize(mean.MAPE = scales::percent(mean(price.APE, na.rm = T))) %>%
+  st_drop_geometry() %>%
+  spread(incomeContext, mean.MAPE) %>%
+  kable(caption = "Table 4.3 Test Set MAPE By neighborhood Income Context") %>% 
+  kable_styling()
+
+```
+
+
+<br />
+
+<br />
+
+## 5. Discussion
+
+Overall, our baseline regression should accurately predict about 61% of home prices and the neighborhood model should predict correctly for about 73% of prices, so it is effective in the majority of cases. Many of the prediction variables included were internal characteristics, which should obviously be the basis for price prediction, but open data we gathered also proved beneficial in enhancing the model. Proximity to parks, lakes, or trails was important, as people living in Boulder clearly value natural resources, but nearness to other, more functional amenities like bus stops and playgrounds also proved to have strong correlations to home price.
+
+Though our neighborhood model was limited by having to be delineated by census tract, it does very well in limiting error due to clustering. Boulder County has both a city and very rural areas within its boundaries, but mean absolute percentage error was almost equalized throughout the county by incorporating neighborhoods. This model does quite well in being generalizable in regards to our chosen income context; however, it is important to discuss how homogeneous Boulder County is.  In this type of model, we would also usually discuss racial variation, but in Boulder County, every census tract is majority white, with the lowest value being 75% white and the highest around 98% white, so we have very limited information about the operation of our model in a more racially diverse context. It is also generally a very high-income area; even with our income context, there is also likely less variation overall than there would be in many cites/surrounding suburbs of cities across the United States. As such, the generalizability of this model as applied to other areas is questionable.
+
+Mean absolute percentage error (MAPE) is generally fairly moderate, and clustering is improved upon by the neighborhood model. In the original baseline regression, mean absolute error is around $200,000 in an area where many houses are over $1,000,000; though not an incredibly high percentage error, a $200,000 error would be considered unacceptable for many home-buyers. 
+
+<br />
+
+<br />
+
+
+## 6. Conclusion
+
+As previously mentioned, this model may not be generalizable to other urban areas due to the general racial and income homogeneity of Boulder County. To improve on its versatility, we would want to try this model, with its variables, in a variety of cities, and examine spatial autocorrelation in different contexts. Another factor missing from our model is crime data, which we was unavailable for open data at a point level. Since crime is one of the most important "disamenities," which we did not have outside of perhaps being located in floodplains, being able to find and integrate that data would be another crucial step in improving the accuracy of our model.
+
+Ultimately, though the model predicts fairly accurately in terms of predicted prices in relation to home prices, we would recommend that further data gathering and incorporation be done to raise the R^2^ value and lower MAE before this model be publicly implemented. Zillow, its users, and its stockholders, expect almost exact accuracy from its prediction models; though our model is strong as a first effort, we would not want to prematurely release it until more fine-tuning can be done and it matches the standards Zillow is known for.
+
