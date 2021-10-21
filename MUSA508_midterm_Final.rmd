@@ -27,9 +27,7 @@ Though this model is centered around Boulder County, its enhancement is applicab
 <br />
 
 
-**Setting Up Environment and Styling**
 
-This section sets up the environment including libraries, styling options, quintile break functions, and color palettes.
 ```{r setup, include=TRUE, cache = FALSE, message = FALSE}
 knitr::opts_chunk$set(echo = TRUE,fig.width = 10, fig.height = 5)
 
@@ -311,7 +309,6 @@ tractsBC19 <-
 ```
 
 
-
 ```{r feature_engineering, cache = TRUE, message = FALSE, warning = FALSE}
 # number of features within 0.5 mile
 boulder.sf <- 
@@ -418,8 +415,7 @@ ggplot() +
 
 Because sale price is so intricately tied to spatial structure, examining spatially related factors was a central part of our work on this model. Much of home price prediction is based on internal characteristics, such as total square footage, age, type of home, and the presence of central heating/air conditioning. Outside of basic home characteristics, our group searched out and vetted local characteristics that might have correlations to home price. For example, we examined factors like neighborhood, proximity to schools/location in highly-rated school districts, proximity to floodplains or water, presence of amenities like parks or trails, and proximity to highways. Though crime is also an important correlator to home price, crime data was not publicly available at a specific enough level to be integrated into the prediction model. 
 
-[**EXPLAIN WHY WE INCLUDED THE THREE MAPS**]{color="red"}
-
+The maps below illustrate a few of these variables, as it is much easier to understand visually how these factors might contribute to the clustering of home pricing. Home age and design type, both internal characteristics, cluster more in more densely populated areas and less so in rural areas. Similarly, concentration of bus stops, one of our external characteristics originally pulled from OpenStreetMap's records, is at its height in the city of Boulder. 
 
 ```{r variable_maps, cache = TRUE, message = FALSE, warning = FALSE, fig.height=5, fig.width=10， fig.align = 'left'}
 #map 1: 
@@ -541,12 +537,14 @@ ggcorrplot(  #correlation plot
 ```
 
 
-[**talk about which variables were interesting among open data, and why we wanted to look at them more (perhaps reference the correlation matrix above), and explain the scatterplots**]{color="red"}
+For our open data, we utilized both the [Boulder County OpenData Portal](https://www.bouldercounty.org/government/open-data/) and [OpenStreetMap](https://www.openstreetmap.org/about). OpenStreetMap is community-built, and was crucial for building our model due to their abundance of spatial information on amenities. We relied on Boulder County OpenData for our administrative boundaries, but they also have some data on amenities. 
+
+In the scatter plots below, we compare price as a function of these data; the lake, playground, and trailhead data were originally from Boulder County, while bus stops were pulled from OSM. We plotted these variables in particular because of their relatively strong correlations in price (see the correlation matrix above), which can be examined in more detail through scatter plots.
 
 
 ```{r Correlation, cache = TRUE, message = FALSE, warning = FALSE，fig.height =8 , fig.width=10, fig.align='center'}
 st_drop_geometry(boulder.sf) %>% 
-  dplyr::select(price, school_nn3, lake_nn3, playground_nn3, busStop.Buffer) %>%
+  dplyr::select(price, trailhd_nn3, lake_nn3, playground_nn3, busStop.Buffer) %>%
   #filter(SalePrice <= 1000000, Age < 500) %>% 
   gather(Variable, Value, -price) %>%  
    ggplot(aes(Value, price)) + # the x and y axes are 3 variables and sale price
@@ -567,7 +565,7 @@ st_drop_geometry(boulder.sf) %>%
 
 Our method of prediction is through Linear Regression, or Ordinary Least Squares (OLS) Regression. This method takes in several different variables that we choose and creates a linear model based on these components; this is also termed as a 'hedonic model.' The ultimate premise of the hedonic model is to identify which characteristics, both internal characteristics such as square footage and age and external characteristics such as nearby amenities, are the best predictors (have the greatest effect) on overall home prices. "Least Squares" refers to the slope of the line, which is calculated by minimizing the squared difference between the prediction and observed prices.
 
-Linear regression can be done with just one variable, which we have shown below in the case of `TotalFinishedSF`, or total finished square footage. The main values we considered are residual standard error, R^2^, and p-value. Residual standard is the error of the coefficient, which helps us understand how reliable the coefficient is. The p-value tells us whether the variable is a useful predictor, and R^2^ is a percentage 'goodness of fit' indicator. Here, since the model of `TotalFinishedSF` has an R^2^ of 0.248, about 24.8% of home price variation can be explained by `TotalFinishedSF`. By incorporating more variables into our model, we can better explain home price variation.
+Linear regression can be done with just one variable, which we have shown below in the case of `TotalFinishedSF`, or total finished square footage. The main values we considered are residual standard error, R^2^, and p-value. Residual standard is the error of the coefficient, which helps us understand how reliable the coefficient is. The p-value tells us whether the variable is a useful predictor, and R^2^ is a percentage 'goodness of fit' indicator. Here, since the model of `TotalFinishedSF` has an R^2^ of 0.25, about 25% of home price variation can be explained by `TotalFinishedSF`. By incorporating more variables into our model, we can better explain home price variation.
 
 
 ```{r simple_reg, cache = TRUE, message = FALSE, warning = FALSE, results="asis"}
@@ -610,7 +608,7 @@ reg.training <-
        dplyr::select(price, Age, qualityCode,  ConstCode, bsmtType, #designCode, 
                      carStorageSF, nbrBedRoom, TotalFinishedSF, mainfloorSF,#nbrRoomsNobath,
                      nbrFullBaths, parks.Buffer, #playground.Buffer, school.Buffer,
-                     school_nn3, playground_nn3, lake_nn3, #park_nn3, 
+                     school_nn3, playground_nn3, lake_nn3, trailhd_nn3, 
                      popDensity, pctBachelors))
 
 stargazer(reg.training, type="html", star.cutoffs = c(0.05, 0.01, 0.001),
@@ -618,11 +616,14 @@ stargazer(reg.training, type="html", star.cutoffs = c(0.05, 0.01, 0.001),
           single.row=TRUE, digits=2)
 
 ```
-This table is a summary of the results from the training regression model; it is set up exactly the same way as the single variable model, just with more variables incorporated. Adding variables increased the R^2^ for this model up to the level where it is able to explain 63% of actual price values.
+
+<br />
+
+This table is a summary of the results from the training regression model; it is set up exactly the same way as the single variable model, just with more variables incorporated. Adding variables increased the R^2^ for this model up to the level where it is able to explain 61% of actual price values.
 
 
 
-[**polished table of MAE and MAPE for the test set**]{color="red"}
+**Mean Absolute Error (MAE) and Mean Absolute Percentage Error (MAPE) for the test set**
 
 ```{r test set MAE MAPE, cache = TRUE, message = FALSE, warning = FALSE}
 
@@ -658,6 +659,7 @@ st_drop_geometry(boulder.test) %>%
      plotTheme()
 
 ```
+The graph above, which shows our linear regression model in comparison with observed prices, illustrates that although our model is fairly accurate for the majority of points, there is spread and numerous outliers that make accurate prediction for all homes difficult. 
 
 ```{r predict_price_map, cache = TRUE, message = FALSE, warning = FALSE, fig.height=6, fig.width=12}
 # visualize raw data
@@ -684,6 +686,9 @@ ggplot() +
 
 
 **Cross Validation**
+
+Through a cross-validation process of folding our data 100 times, we found that our training model was able to explain about 65% of home prices in Boulder County. The initial results are below, but the histogram of Mean Absolute Error (MAE) also gives us a better idea of the spread of our absolute error, which looks to be clustered mostly between errors of $175,000-$225,000 off of the actual sale price.
+
 ```{r cross_validation, cache = TRUE, message = FALSE, warning = FALSE}
 fitControl <- trainControl(method = "cv", number = 100)
 set.seed(825)
@@ -694,7 +699,7 @@ reg.training.cv <-
                                 dplyr::select(price, Age, qualityCode, ConstCode, bsmtType, #designCode, 
                                                carStorageSF, nbrBedRoom, TotalFinishedSF, mainfloorSF, Roof_Cover, #nbrRoomsNobath,
                                                nbrFullBaths, parks.Buffer, #playground.Buffer, school.Buffer,
-                                               school_nn3, playground_nn3, lake_nn3, #park_nn3, 
+                                               school_nn3, playground_nn3, lake_nn3, trailhd_nn3, 
                                                popDensity, pctBachelors), 
      method = "lm", trControl = fitControl, na.action = na.pass)
 
@@ -720,6 +725,8 @@ ggplot(data=reg.training.cv$resample, aes(reg.training.cv$resample$MAE)) +
 
 **Spatial Lag and Autocorrelation**
 
+ 
+
 ```{r spatial_lag, cache = TRUE, message = FALSE, warning = FALSE}
 
 coords <- st_coordinates(boulder.sf) 
@@ -737,6 +744,7 @@ boulder.test <-
          lagPriceError = lag.listw(spatialWeights.test, boulder.test$price.Error, zero.policy=TRUE, NAOK = TRUE))
 ```
 
+**Moran's I**, which is plotted below, is a way for us to evaluate whether spatial autocorrelation, or clustering, is a factor that affects the error in our model. Moran's I is a statistic measured between -1 and 1, where -1 indicates data that exhibits perfect spatial dispersion, 0 is random dispersion, and 1 indicates completely clustered data. The histogram of permuted values below is based off of data with random dispersion, which gives a Moran's I right around zero; because the observed Moran's I from our actual error is higher than zero, in this case about 0.25, it indicates that we have some spatial clustering in our error, and thus may need to incorporate factors that account for that (like neighborhoods) into our predictive model.
 
 ```{r moransI, cache = TRUE, message = FALSE, warning = FALSE}
 moranTest <- moran.mc(boulder.test$price.Error, 
@@ -754,6 +762,8 @@ ggplot(as.data.frame(moranTest$res[c(1:999)]), aes(moranTest$res[c(1:999)])) +
   plotTheme()
 ```
 
+Plotting spatial lag of our errors is another way to evaluate clustering. Since the slope of our spatial lag is nearly zero, it does not indicate that with increases in price, follow increases in error. Nonetheless, since our Moran's I indicated the presence of error clustering, we also moved to take neighborhoods into our model as a possible solution to spatial autocorrelation.
+
 ```{r spatial lag of errors, cache = TRUE, message = FALSE, warning = FALSE}
 
 
@@ -762,12 +772,14 @@ st_drop_geometry(boulder.test) %>%
      geom_point(size = .5) + geom_smooth(method = "lm", se=F, colour = "#08519c") +
      labs(title = "Price as a function of the Spatial Lag of Price Error",
           caption="Figure 4.4",
-          x="Spatial Lag of Price Errors (Mean Error of 5 Nearest Neighbors") +
+          x="Spatial Lag of Price Errors (Mean Error of 5 Nearest Neighbors)") +
      plotTheme()
 
 ```
 
 **Neighborhood Model**
+
+One of the most effective ways to make a house pricing model more accurate, especially with our model's existence of spatial autocorrelation, is to incorporate local neighborhoods into it. Neighborhood boundaries are vacuous and change regularly but are still incredibly useful for predicting price variation within cities in particular, as many people will consider what neighborhood their home is in as a way to gauge safety and local culture, among other factors. With Boulder County, this was more difficult, as likely since much of Boulder is rural, the county does not record official neighborhood boundaries; to circumvent this, we integrated census tracts into our model instead. In the city of Boulder, census tracts are fairly well aligned with neighborhoods; outside of the city, the tracts are larger and encompass larger areas, but we still refer to this as 'neighborhood regression.'
 
 ```{r neighborhood_model, cache = TRUE, message = FALSE, warning = FALSE, results="asis"}
 # no neighbohood so that usually using census tract
@@ -786,15 +798,18 @@ reg.nhood <- lm(price ~ ., data = as.data.frame(boulder.training) %>%
                                   dplyr::select(GEOID, price, Age, qualityCode, ConstCode, bsmtType, #designCode, 
                                                 carStorageSF, nbrBedRoom, TotalFinishedSF, mainfloorSF, Roof_Cover, #nbrRoomsNobath,
                                                 nbrFullBaths, parks.Buffer, #playground.Buffer, school.Buffer,
-                                                school_nn3, playground_nn3, lake_nn3, #park_nn3, 
+                                                school_nn3, playground_nn3, lake_nn3, trailhd_nn3, 
                                                 popDensity, pctBachelors))
 
-stargazer(reg.training, type="html", star.cutoffs = c(0.05, 0.01, 0.001),
+stargazer(reg.nhood, type="html", star.cutoffs = c(0.05, 0.01, 0.001),
           median=TRUE, title="Table 4.2 Neighborhood Regression Results of Training Set", align=TRUE,
           single.row=TRUE, digits=2)
 
 ```
 
+<br />
+
+As can be seen in the regression results above, the R^2^ is significantly improved by just adding tracts, up to a value of 0.73. As well as the R^2^ value, the mean absolute percentage error has been reduced, and especially improved over spatial context, as shown in the two maps and plot below. Though there are still a couple of outliers, most points are much more tightly clustered.
 
 ```{r mape_plot, cache = TRUE, message = FALSE, warning = FALSE}
 boulder.test.nhood <-
@@ -854,6 +869,8 @@ st_drop_geometry(bothRegressions) %>%
 
 **Generalizability by Group**
 
+To examine the type of clustering in our model, we compare the MAPE of "High" and "Low" household incomes by tract to Boulder County's median of $83,019, measuring above and below respectively. Though the median income in Boulder County is higher than that of the United States, using the county median income is more relevant for local comparison. Compared to the map of MAPE by neighborhood in Figure 4.5, there is mostly no clear relationship in our model between income and percentage error. The only possible correlation is in a couple of Boulder City tracts, which are lower-income and have a slightly lower MAPE than most of Boulder County; however, it is minimal. Table 4.3 echoes this, showing the difference between MAPE in low- and high-income areas is only about 2-3%. Avoiding error cluster by income is important because over- or under-estimating prices corresponding to spatial context can, if too dramatic, have effects on local areas.
+
 ```{r context_map, cache = TRUE, message = FALSE, warning = FALSE, fig.height=5, fig.width=10}
 
   ggplot() + geom_sf(data = na.omit(tractsBC19), aes(fill = incomeContext)) +
@@ -874,24 +891,27 @@ st_join(bothRegressions, tractsBC19) %>%
   spread(incomeContext, mean.MAPE) %>%
   kable(caption = "Table 4.3 Test Set MAPE By neighborhood Income Context") %>% 
   kable_styling()
+
 ```
 
 
 <br />
 <br />
 
-## 5. Disucssion
+## 5. Discussion
 
-[write up]
+Overall, our baseline regression should accurately predict about 61% of home prices and the neighborhood model should predict correctly for about 73% of prices, so it is effective in the majority of cases. Many of the prediction variables included were internal characteristics, which should obviously be the basis for price prediction, but open data we gathered also proved beneficial in enhancing the model. Proximity to parks, lakes, or trails was important, as people living in Boulder clearly value natural resources, but nearness to other, more functional amenities like bus stops and playgrounds also proved to have strong correlations to home price.
 
+Though our neighborhood model was limited by having to be delineated by census tract, it does very well in limiting error due to clustering. Boulder County has both a city and very rural areas within its boundaries, but mean absolute percentage error was almost equalized throughout the county by incorporating neighborhoods. This model does quite well in being generalizable in regards to our chosen income context; however, it is important to discuss how homogeneous Boulder County is.  In this type of model, we would also usually discuss racial variation, but in Boulder County, every census tract is majority white, with the lowest value being 75% white and the highest around 98% white, so we have very limited information about the operation of our model in a more racially diverse context. It is also generally a very high-income area; even with our income context, there is also likely less variation overall than there would be in many cites/surrounding suburbs of cities across the United States. As such, the generalizability of this model as applied to other areas is questionable.
 
+Mean absolute percentage error is generally fairly low, and clustering is improved upon by the neighborhood model. In the original baseline regression, mean absolute error is around $200,000 in an area where many houses are over $1,000,000; though not an incredibly high percentage error, a $200,000 error would be considered unacceptable for many home-buyers. 
 
-<br />
 <br />
 
 ## 6. Conclusion
 
-[write up]
+As previously mentioned, this model may not be generalizable to other urban areas due to the general racial and income homogeneity of Boulder County. To improve on its versatility, we would want to try this model, with its variables, in a variety of cities, and examine spatial autocorrelation in different contexts. Another factor missing from our model is crime data, which we was unavailable for open data at a point level. Since crime is one of the most important "disamenities," which we did not have outside of perhaps being located in floodplains, being able to find and integrate that data would be another crucial step in improving the accuracy of our model.
 
+Ultimately, though the model predicts fairly accurately in terms of predicted prices in relation to home prices, we would recommend that further data gathering and incorporation be done to raise the R^2^ value and lower MAE before this model be publicly implemented. Zillow, its users, and its stockholders, expect almost exact accuracy from its prediction models; though our model is strong as a first effort, we would not want to prematurely release it until more fine-tuning can be done and it matches the standards Zillow is known for.
 
 
